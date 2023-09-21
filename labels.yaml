@@ -1,0 +1,9 @@
+apiVersion: labels.my.domain/v1alpha1
+kind: CustomLabels
+metadata:
+  name: dvirtest
+  namespace: dvir
+spec:
+  customLabels:
+    hello: world
+    user: dvir
