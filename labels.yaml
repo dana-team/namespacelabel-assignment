@@ -1,9 +1,9 @@
 apiVersion: labels.my.domain/v1alpha1
 kind: CustomLabels
 metadata:
-  name: dvirtest
-  namespace: dvir
+  name: dvirlabels
+  namespace: default
 spec:
   customLabels:
-    hello: world
-    user: dvir
+    app.kubernetes.io/instance: idk
+    app: prod

@@ -14,7 +14,11 @@ spec:
     singular: customlabels
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.applied
+      name: Applied
+      type: boolean
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: CustomLabels is the Schema for the customlabels API
@@ -46,6 +50,10 @@ spec:
               applied:
                 description: TRUE if labels have been added, else FALSE
                 type: boolean
+              message:
+                type: string
+            required:
+            - applied
             type: object
         type: object
     served: true

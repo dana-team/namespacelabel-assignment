@@ -18,6 +18,10 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"strings"
+
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	labelsv1alpha1 "github.com/dvirgilad/namespacelabel-assignment/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -25,7 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	log "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -59,59 +62,89 @@ func (r *CustomLabelsReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	err := r.Get(ctx, types.NamespacedName{Name: req.Namespace}, namespace)
 	if err != nil {
 		log.Error(err, "unable to find Namespace")
-		customLabels.Status.Applied = false
 		return ctrl.Result{}, err
 	}
 	labelsToAdd := customLabels.Spec.CustomLabels
 
-	deleteLabelsFinalizer := "labels.my.domain/finalizer"
+	DeleteLabelsFinalizer := "labels.my.domain/finalizer"
+	if customLabels.ObjectMeta.DeletionTimestamp.IsZero() {
+		//object is not being deleted
+		//add finalizer
 
-	// Delete labels if object is deleted
-
-	if !customLabels.ObjectMeta.DeletionTimestamp.IsZero() {
-		//object is being deleted
-		for k := range labelsToAdd {
-			delete(namespace.Labels, k)
-		}
-
-		if err := r.Update(ctx, namespace); err != nil {
-			log.Error(err, "unable to remove namespace labels")
-			return ctrl.Result{}, err
-		}
-		// delete finalizer
-		controllerutil.RemoveFinalizer(customLabels, deleteLabelsFinalizer)
-		if err := r.Update(ctx, customLabels); err != nil {
-			log.Error(err, "unable to delete finalizer")
-			return ctrl.Result{}, err
-		}
-		log.Info("deleted namespace labels")
-		return ctrl.Result{}, nil
-
-	} else {
-		// object is not being deleted - add finalizer
-		if !controllerutil.ContainsFinalizer(customLabels, deleteLabelsFinalizer) {
-			controllerutil.AddFinalizer(customLabels, deleteLabelsFinalizer)
+		if !controllerutil.ContainsFinalizer(customLabels, DeleteLabelsFinalizer) {
+			controllerutil.AddFinalizer(customLabels, DeleteLabelsFinalizer)
 			if err := r.Update(ctx, customLabels); err != nil {
 				log.Error(err, "unable to add finalizer")
 				return ctrl.Result{}, err
 			}
 			log.Info("added finalizer")
-		} else {
-			log.Info("finalizer already present")
+			return ctrl.Result{}, nil
 		}
+
+	} else {
+		// object is being deleted
+
+		//check if deleting protected labels and delete labels
+		if controllerutil.ContainsFinalizer(customLabels, DeleteLabelsFinalizer) {
+
+			if err := r.deleteNameSpaceLabels(ctx, customLabels, namespace); err != nil {
+				log.Error(err, "unable to remove labels")
+				return ctrl.Result{}, err
+			}
+			log.Info("deleted labels from namespace")
+			// remove finalizer
+			controllerutil.RemoveFinalizer(customLabels, DeleteLabelsFinalizer)
+			if err := r.Update(ctx, customLabels); err != nil {
+				log.Error(err, "error removing finalizer")
+				return ctrl.Result{}, err
+			}
+			log.Info("Removed finalizer")
+			return ctrl.Result{}, nil
+		}
+
+		log.Info("removed namespace labels")
+		return ctrl.Result{}, nil
+	}
+	// delete old labels
+	for k := range namespace.ObjectMeta.Labels {
+		// Skip protected labels that contain "kubernetes.io"
+		if strings.Contains(k, "kubernetes.io") {
+			continue
+		}
+		if strings.HasPrefix(k, customLabels.Name) {
+			// Prefix the label key with the name of the custom resource
+			delete(namespace.Labels, k)
+		}
+
+	}
+	for k, v := range labelsToAdd {
+		// Skip protected labels that contain "kubernetes.io"
+		if strings.Contains(k, "kubernetes.io") {
+			continue
+		}
+
+		// Prefix the label key with the name of the custom resource
+		customKey := fmt.Sprintf("%s/%s", customLabels.Name, k)
+		namespace.Labels[customKey] = v
 	}
 
-	for k, v := range labelsToAdd {
-		namespace.Labels[k] = v
-	}
-	err = r.Update(ctx, namespace)
-	if err != nil {
-		log.Error(err, "failed to update namespace")
+	if err := r.Client.Update(ctx, namespace); err != nil {
+		log.Error(err, "error adding labels")
 		customLabels.Status.Applied = false
+		customLabels.Status.Message = "error adding labels to namespace"
+		if err := r.Client.Status().Update(ctx, customLabels); err != nil {
+			log.Error(err, "unable to modify custom label status")
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, err
+	}
+	customLabels.Status.Applied = true
+	customLabels.Status.Message = "applied namespace labels"
+	if err := r.Client.Status().Update(ctx, customLabels); err != nil {
+		log.Error(err, "unable to modify custom label status")
 		return ctrl.Result{}, err
 	}
 	log.Info("added namespace labels")
-	customLabels.Status.Applied = true
 	return ctrl.Result{}, nil
 }
 
@@ -120,4 +153,24 @@ func (r *CustomLabelsReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&labelsv1alpha1.CustomLabels{}).
 		Complete(r)
+}
+
+func (r *CustomLabelsReconciler) deleteNameSpaceLabels(ctx context.Context, customLabels *labelsv1alpha1.CustomLabels, NameSpace *corev1.Namespace) error {
+	for k := range NameSpace.ObjectMeta.Labels {
+		// Skip protected labels that contain "kubernetes.io"
+		if strings.Contains(k, "kubernetes.io") {
+			continue
+		}
+
+		// Prefix the label key with the name of the custom resource
+		if strings.HasPrefix(k, customLabels.Name) {
+			// Prefix the label key with the name of the custom resource
+			delete(NameSpace.ObjectMeta.Labels, k)
+		}
+	}
+	// remove labels from namespace
+	if err := r.Client.Update(ctx, NameSpace); err != nil {
+		return err
+	}
+	return nil
 }

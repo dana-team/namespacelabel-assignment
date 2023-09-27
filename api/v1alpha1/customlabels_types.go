@@ -29,11 +29,13 @@ type CustomLabelsSpec struct {
 // CustomLabelsStatus defines the observed state of CustomLabels
 type CustomLabelsStatus struct {
 	// TRUE if labels have been added, else FALSE
-	Applied bool `json:"applied,omitempty"`
+	Applied bool   `json:"applied"`
+	Message string `json:"message,omitempty"`
 }
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
+//+kubebuilder:printcolumn:name="Applied",type=boolean,JSONPath=`.status.applied`
 
 // CustomLabels is the Schema for the customlabels API
 type CustomLabels struct {
