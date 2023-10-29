@@ -55,8 +55,13 @@ func (r *CustomLabelsReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	log := log.FromContext(ctx)
 	var customLabels = &labelsv1alpha1.CustomLabels{}
 	if err := r.Get(ctx, req.NamespacedName, customLabels); err != nil {
-		log.Error(err, "unable to fetch custom labels")
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if client.IgnoreNotFound(err) != nil {
+			log.Error(err, "unable to fetch custom labels")
+			return ctrl.Result{}, err
+		} else {
+			return ctrl.Result{}, nil
+		}
+
 	}
 	namespace := &corev1.Namespace{}
 	err := r.Get(ctx, types.NamespacedName{Name: req.Namespace}, namespace)
