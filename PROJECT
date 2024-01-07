@@ -2,7 +2,7 @@
 # This file is used to track the info used to scaffold your project
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
-domain: my.domain
+domain: cluster.local
 layout:
 - go.kubebuilder.io/v4
 projectName: customlabels
@@ -12,9 +12,9 @@ resources:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: my.domain
+  domain: cluster.local
   group: labels
-  kind: CustomLabels
-  path: github.com/dvirgilad/namespacelabel-assignment/api/v1alpha1
-  version: v1alpha1
+  kind: CustomLabel
+  path: github.com/dvirgilad/namespacelabel-assignment/api/v1
+  version: v1
 version: "3"

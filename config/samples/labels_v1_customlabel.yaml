@@ -1,0 +1,12 @@
+apiVersion: labels.cluster.local/v1
+kind: CustomLabel
+metadata:
+  labels:
+    app.kubernetes.io/name: customlabel
+    app.kubernetes.io/instance: customlabel-sample
+    app.kubernetes.io/part-of: customlabels
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: customlabels
+  name: customlabel-sample
+spec:
+  # TODO(user): Add fields here

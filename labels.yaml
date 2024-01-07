@@ -1,9 +1,0 @@
-apiVersion: labels.my.domain/v1alpha1
-kind: CustomLabels
-metadata:
-  name: dvirlabels
-  namespace: default
-spec:
-  customLabels:
-    app.kubernetes.io/instance: idk
-    app: prod
