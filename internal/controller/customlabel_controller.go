@@ -37,19 +37,9 @@ type CustomLabelReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-//+kubebuilder:rbac:groups=labels.cluster.local,resources=customlabels,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=labels.cluster.local,resources=customlabels/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=labels.cluster.local,resources=customlabels/finalizers,verbs=update
-
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the CustomLabel object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.16.0/pkg/reconcile
+// +kubebuilder:rbac:groups=labels.dvir.io,resources=customlabels,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=labels.dvir.io,resources=customlabels/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=labels.dvir.io,resources=customlabels/finalizers,verbs=update
 func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 	var customLabels = &labelsv1.CustomLabel{}
@@ -69,8 +59,7 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 	labelsToAdd := customLabels.Spec.CustomLabels
-
-	DeleteLabelsFinalizer := "labels.my.domain/finalizer"
+	DeleteLabelsFinalizer := "labels.dvir.io/finalizer"
 	if customLabels.ObjectMeta.DeletionTimestamp.IsZero() {
 		//object is not being deleted
 		//add finalizer
@@ -142,6 +131,7 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 		return ctrl.Result{}, err
 	}
+
 	customLabels.Status.Applied = true
 	customLabels.Status.Message = "applied namespace labels"
 	if err := r.Client.Status().Update(ctx, customLabels); err != nil {

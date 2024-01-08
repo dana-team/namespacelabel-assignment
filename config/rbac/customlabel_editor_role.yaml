@@ -12,7 +12,7 @@ metadata:
   name: customlabel-editor-role
 rules:
 - apiGroups:
-  - labels.cluster.local
+  - labels.dvir.io
   resources:
   - customlabels
   verbs:
@@ -24,7 +24,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - labels.cluster.local
+  - labels.dvir.io
   resources:
   - customlabels/status
   verbs:

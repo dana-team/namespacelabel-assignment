@@ -12,7 +12,7 @@ metadata:
   name: customlabel-viewer-role
 rules:
 - apiGroups:
-  - labels.cluster.local
+  - labels.dvir.io
   resources:
   - customlabels
   verbs:
@@ -20,7 +20,7 @@ rules:
   - list
   - watch
 - apiGroups:
-  - labels.cluster.local
+  - labels.dvir.io
   resources:
   - customlabels/status
   verbs:
