@@ -1,94 +1,55 @@
-# customlabels
-// TODO(user): Add simple overview of use/purpose
+# Home Assignment
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+When operating a large multi-tenant Kubernetes cluster, tenants are usually isolated by Namespaces and Role Base Access Control (RBAC).
+This approach limits the permissions tenant have on the Namespace object they use to deploy their applications.
+Some tenants would like to set specific labels on their Namespace; however, they cannot edit it.
+As operators, we came up with the idea of creating a Custom Resource Definition (CRD), which will allow tenants to edit their
+Namespace's labels.
 
-## Getting Started
-You’ll need a Kubernetes cluster to run against. You can use [KIND](https://sigs.k8s.io/kind) to get a local cluster for testing, or run against a remote cluster.
-**Note:** Your controller will automatically use the current context in your kubeconfig file (i.e. whatever cluster `kubectl cluster-info` shows).
+**Please make sure you have a basic understanding of the following concepts before you continue to read.**
+- [Controller](https://kubernetes.io/docs/concepts/architecture/controller/)
+- [Custom Resource Definition (CRD)](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/)
+- [Operator](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/)
+- [Kubebuilder](https://book.kubebuilder.io)
+- [Operator-SDK](https://sdk.operatorframework.io/docs/)
 
-### Running on the cluster
-1. Install Instances of Custom Resources:
+## NamespaceLabel Operator
 
-```sh
-kubectl apply -k config/samples/
+This operator should be reasonably straightforward. It should sync between the NamespaceLabel CRD and the Namespace Labels.
+Various ways could achieve this functionality. Please go ahead and get creative. However, even a simple working solution is good.
+
+An example of a NamespaceLabel CR:
+
+```
+apiVersion: dana.io.dana.io/v1alpha1
+kind: NamespaceLabel
+metadata:
+    name: namespacelabel-sample
+    namespace: default
+spec:
+    labels:
+        label_1: a
+        label_2: b
+        label_3: c
 ```
 
-2. Build and push your image to the location specified by `IMG`:
+### Things to address
 
-```sh
-make docker-build docker-push IMG=<some-registry>/customlabels:tag
-```
+- Can you create/update/delete labels?
+- Can you deal with more than one NamespaceLabel object per Namespace? If not, solve it.
+- Namespaces usually have [labels for management](https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/), can you protect those labels?
+- Tenant is not able to consume CRDs by default, what needs to be done to let tenant use the NamespaceLabel CRD?
+- Code should be documented, tested (unit testing) and well-written.
 
-3. Deploy the controller to the cluster with the image specified by `IMG`:
+## Tools you should use
+This repo contains a go project you can fork it and use it as a template, also you will need:
+- [Kind](https://kind.sigs.k8s.io)  for creating local cluster
+- [Go](https://go.dev) your operator should be written in Go
+- [Kubebuilder](https://book.kubebuilder.io) for creating the operator and crd template
+- [Operator-SDK](https://sdk.operatorframework.io/docs/) for documentation about controllers and syntax
+- [Ginkgo](https://onsi.github.io/ginkgo/) for testing
 
-```sh
-make deploy IMG=<some-registry>/customlabels:tag
-```
-
-### Uninstall CRDs
-To delete the CRDs from the cluster:
-
-```sh
-make uninstall
-```
-
-### Undeploy controller
-UnDeploy the controller from the cluster:
-
-```sh
-make undeploy
-```
-
-## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
-
-### How it works
-This project aims to follow the Kubernetes [Operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/).
-
-It uses [Controllers](https://kubernetes.io/docs/concepts/architecture/controller/),
-which provide a reconcile function responsible for synchronizing resources until the desired state is reached on the cluster.
-
-### Test It Out
-1. Install the CRDs into the cluster:
-
-```sh
-make install
-```
-
-2. Run your controller (this will run in the foreground, so switch to a new terminal if you want to leave it running):
-
-```sh
-make run
-```
-
-**NOTE:** You can also run this in one step by running: `make install run`
-
-### Modifying the API definitions
-If you are editing the API definitions, generate the manifests such as CRs or CRDs using:
-
-```sh
-make manifests
-```
-
-**NOTE:** Run `make --help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
-
-## License
-
-Copyright 2024.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
+## Bonus
+- Use GitHub actions to protect the main branch and test every pull request automatically
+- Implement e2e testing
+- [Use ECS for logging](https://www.elastic.co/guide/en/ecs/current/index.html)

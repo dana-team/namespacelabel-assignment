@@ -2,7 +2,7 @@ apiVersion: labels.dvir.io/v1
 kind: CustomLabel
 metadata:
   name: dvirlabels
-  namespace: default
+  namespace: dvir
 spec:
   customLabels:
     app.kubernetes.io/instance: idk

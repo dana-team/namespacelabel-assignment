@@ -60,13 +60,15 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	labelsToAdd := customLabels.Spec.CustomLabels
 	DeleteLabelsFinalizer := "labels.dvir.io/finalizer"
+
 	if customLabels.ObjectMeta.DeletionTimestamp.IsZero() {
 		//object is not being deleted
 		//add finalizer
-
 		if !controllerutil.ContainsFinalizer(customLabels, DeleteLabelsFinalizer) {
+			log.Info("adding finalizer")
 			controllerutil.AddFinalizer(customLabels, DeleteLabelsFinalizer)
 			if err := r.Update(ctx, customLabels); err != nil {
+
 				log.Error(err, "unable to add finalizer")
 				return ctrl.Result{}, err
 			}
@@ -76,10 +78,10 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	} else {
 		// object is being deleted
-
+		log.Info("deleting labels")
 		//check if deleting protected labels and delete labels
 		if controllerutil.ContainsFinalizer(customLabels, DeleteLabelsFinalizer) {
-
+			log.Info("removing finalizer")
 			if err := r.deleteNameSpaceLabels(ctx, customLabels, namespace); err != nil {
 				log.Error(err, "unable to remove labels")
 				return ctrl.Result{}, err
@@ -99,13 +101,14 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil
 	}
 	// delete old labels
+	log.Info("deleting stale labels")
 	for k := range namespace.ObjectMeta.Labels {
 		// Skip protected labels that contain "kubernetes.io"
 		if strings.Contains(k, "kubernetes.io") {
 			continue
 		}
 		if strings.HasPrefix(k, customLabels.Name) {
-			// Prefix the label key with the name of the custom resource
+			// Delete labels with prefix
 			delete(namespace.Labels, k)
 		}
 
@@ -131,11 +134,13 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 		return ctrl.Result{}, err
 	}
-
 	customLabels.Status.Applied = true
 	customLabels.Status.Message = "applied namespace labels"
+	log.Info("updating labels object status")
+
 	if err := r.Client.Status().Update(ctx, customLabels); err != nil {
 		log.Error(err, "unable to modify custom label status")
+
 		return ctrl.Result{}, err
 	}
 	log.Info("added namespace labels")
