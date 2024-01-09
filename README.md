@@ -7,9 +7,9 @@ As operators, we came up with the idea of creating a Custom Resource Definition 
 Namespace's labels.
 
 **Please make sure you have a basic understanding of the following concepts before you continue to read.**
-- [Controller](https://kubernetes.io/docs/concepts/architecture/controller/) 
+- [Controller](https://kubernetes.io/docs/concepts/architecture/controller/)
 - [Custom Resource Definition (CRD)](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/)
-- [Operator](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/) 
+- [Operator](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/)
 - [Kubebuilder](https://book.kubebuilder.io)
 - [Operator-SDK](https://sdk.operatorframework.io/docs/)
 
@@ -18,7 +18,7 @@ Namespace's labels.
 This operator should be reasonably straightforward. It should sync between the NamespaceLabel CRD and the Namespace Labels.
 Various ways could achieve this functionality. Please go ahead and get creative. However, even a simple working solution is good.
 
-An example of a NamespaceLabel CR: 
+An example of a NamespaceLabel CR:
 
 ```
 apiVersion: dana.io.dana.io/v1alpha1

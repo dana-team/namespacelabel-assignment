@@ -1,0 +1,31 @@
+# permissions for end users to edit customlabels.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: customlabel-editor-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: customlabels
+    app.kubernetes.io/part-of: customlabels
+    app.kubernetes.io/managed-by: kustomize
+  name: customlabel-editor-role
+rules:
+- apiGroups:
+  - labels.dvir.io
+  resources:
+  - customlabels
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - labels.dvir.io
+  resources:
+  - customlabels/status
+  verbs:
+  - get
