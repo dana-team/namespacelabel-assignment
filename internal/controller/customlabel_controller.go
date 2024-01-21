@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
 	"go.elastic.co/ecszap"
 	"go.uber.org/zap"
 	"os"
@@ -30,14 +29,16 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // CustomLabelReconciler reconciles a CustomLabel object
 type CustomLabelReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme            *runtime.Scheme
+	ProtectedPrefixes string
 }
+
+const DeleteLabelsFinalizer = "labels.dvir.io/finalizer"
 
 // +kubebuilder:rbac:groups=labels.dvir.io,resources=customlabels,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=labels.dvir.io,resources=customlabels/status,verbs=get;update;patch
@@ -46,7 +47,7 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	encoderConfig := ecszap.NewDefaultEncoderConfig()
 	core := ecszap.NewCore(encoderConfig, os.Stdout, zap.DebugLevel)
 	log := zap.New(core, zap.AddCaller())
-
+	protectedPrefixArray := strings.Split(r.ProtectedPrefixes, ",")
 	var customLabels = &labelsv1.CustomLabel{}
 	if err := r.Get(ctx, req.NamespacedName, customLabels); err != nil {
 		if client.IgnoreNotFound(err) != nil {
@@ -63,21 +64,16 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		log.Error("unable to find Namespace", zap.Error(err))
 		return ctrl.Result{}, err
 	}
-	labelsToAdd := customLabels.Spec.CustomLabels
-	DeleteLabelsFinalizer := "labels.dvir.io/finalizer"
 
 	if customLabels.ObjectMeta.DeletionTimestamp.IsZero() {
 		//object is not being deleted
 		//add finalizer
-		if !controllerutil.ContainsFinalizer(customLabels, DeleteLabelsFinalizer) {
-			log.Info("adding finalizer")
-			controllerutil.AddFinalizer(customLabels, DeleteLabelsFinalizer)
-			if err := r.Update(ctx, customLabels); err != nil {
+		ok, err := r.AddFinalizer(ctx, customLabels, log)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if ok {
 
-				log.Error("unable to add finalizer", zap.Error(err))
-				return ctrl.Result{}, err
-			}
-			log.Info("added finalizer")
 			return ctrl.Result{}, nil
 		}
 
@@ -85,50 +81,43 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// object is being deleted
 		log.Info("deleting labels")
 		//check if deleting protected labels and delete labels
-		if controllerutil.ContainsFinalizer(customLabels, DeleteLabelsFinalizer) {
-			log.Info("removing finalizer")
-			if err := r.deleteNameSpaceLabels(ctx, customLabels, namespace); err != nil {
-				log.Error("unable to remove labels", zap.Error(err))
-				return ctrl.Result{}, err
+		if err := r.DeleteNameSpaceLabels(customLabels, namespace, protectedPrefixArray); err != nil {
+			log.Error("unable to remove labels", zap.Error(err))
+			return ctrl.Result{}, err
+		}
+		// remove labels from namespace
+		if err := r.Client.Update(ctx, namespace); err != nil {
+			return ctrl.Result{}, err
+
+		}
+		log.Info("deleted labels from namespace")
+		ok, err := r.DeleteFinalizer(ctx, customLabels, log)
+		if err != nil {
+			return ctrl.Result{}, err
+		} else {
+			if ok {
+				return ctrl.Result{}, nil
 			}
-			log.Info("deleted labels from namespace")
-			// remove finalizer
-			controllerutil.RemoveFinalizer(customLabels, DeleteLabelsFinalizer)
-			if err := r.Update(ctx, customLabels); err != nil {
-				log.Error("error removing finalizer", zap.Error(err))
-				return ctrl.Result{}, err
-			}
-			log.Info("Removed finalizer")
-			return ctrl.Result{}, nil
 		}
 
-		log.Info("removed namespace labels")
-		return ctrl.Result{}, nil
 	}
 	// delete old labels
 	log.Info("deleting stale labels")
-	for k := range namespace.ObjectMeta.Labels {
-		// Skip protected labels that contain "kubernetes.io"
-		if strings.Contains(k, "kubernetes.io") {
-			continue
-		}
-		if strings.HasPrefix(k, customLabels.Name) {
-			// Delete labels with prefix
-			delete(namespace.Labels, k)
-		}
+	if err := r.DeleteNameSpaceLabels(customLabels, namespace, protectedPrefixArray); err != nil {
+		log.Error("unable to remove labels", zap.Error(err))
+		return ctrl.Result{}, err
+	}
+	// remove labels from namespace
+	if err := r.Client.Update(ctx, namespace); err != nil {
+		log.Error("unable to remove stale labels", zap.Error(err))
+		return ctrl.Result{}, err
 
 	}
-	for k, v := range labelsToAdd {
-		// Skip protected labels that contain "kubernetes.io"
-		if strings.Contains(k, "kubernetes.io") {
-			continue
-		}
-
-		// Prefix the label key with the name of the custom resource
-		customKey := fmt.Sprintf("%s/%s", customLabels.Name, k)
-		namespace.Labels[customKey] = v
+	//add labels
+	if err := r.AddNamespaceLabels(customLabels, namespace, protectedPrefixArray); err != nil {
+		log.Error("unable to remove labels", zap.Error(err))
+		return ctrl.Result{}, err
 	}
-
 	if err := r.Client.Update(ctx, namespace); err != nil {
 		log.Error("error adding labels", zap.Error(err))
 		customLabels.Status.Applied = false
@@ -157,23 +146,4 @@ func (r *CustomLabelReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&labelsv1.CustomLabel{}).
 		Complete(r)
-}
-func (r *CustomLabelReconciler) deleteNameSpaceLabels(ctx context.Context, customLabel *labelsv1.CustomLabel, NameSpace *corev1.Namespace) error {
-	for k := range NameSpace.ObjectMeta.Labels {
-		// Skip protected labels that contain "kubernetes.io"
-		if strings.Contains(k, "kubernetes.io") {
-			continue
-		}
-
-		// Prefix the label key with the name of the custom resource
-		if strings.HasPrefix(k, customLabel.Name) {
-			// Prefix the label key with the name of the custom resource
-			delete(NameSpace.ObjectMeta.Labels, k)
-		}
-	}
-	// remove labels from namespace
-	if err := r.Client.Update(ctx, NameSpace); err != nil {
-		return err
-	}
-	return nil
 }
