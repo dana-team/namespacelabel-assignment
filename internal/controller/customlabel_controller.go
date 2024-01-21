@@ -19,6 +19,9 @@ package controller
 import (
 	"context"
 	"fmt"
+	"go.elastic.co/ecszap"
+	"go.uber.org/zap"
+	"os"
 	"strings"
 
 	labelsv1 "github.com/dvirgilad/namespacelabel-assignment/api/v1"
@@ -28,7 +31,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // CustomLabelReconciler reconciles a CustomLabel object
@@ -41,11 +43,14 @@ type CustomLabelReconciler struct {
 // +kubebuilder:rbac:groups=labels.dvir.io,resources=customlabels/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=labels.dvir.io,resources=customlabels/finalizers,verbs=update
 func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
+	encoderConfig := ecszap.NewDefaultEncoderConfig()
+	core := ecszap.NewCore(encoderConfig, os.Stdout, zap.DebugLevel)
+	log := zap.New(core, zap.AddCaller())
+
 	var customLabels = &labelsv1.CustomLabel{}
 	if err := r.Get(ctx, req.NamespacedName, customLabels); err != nil {
 		if client.IgnoreNotFound(err) != nil {
-			log.Error(err, "unable to fetch custom labels")
+			log.Error("unable to fetch custom labels", zap.Error(err))
 			return ctrl.Result{}, err
 		} else {
 			return ctrl.Result{}, nil
@@ -55,7 +60,7 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	namespace := &corev1.Namespace{}
 	err := r.Get(ctx, types.NamespacedName{Name: req.Namespace}, namespace)
 	if err != nil {
-		log.Error(err, "unable to find Namespace")
+		log.Error("unable to find Namespace", zap.Error(err))
 		return ctrl.Result{}, err
 	}
 	labelsToAdd := customLabels.Spec.CustomLabels
@@ -69,7 +74,7 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			controllerutil.AddFinalizer(customLabels, DeleteLabelsFinalizer)
 			if err := r.Update(ctx, customLabels); err != nil {
 
-				log.Error(err, "unable to add finalizer")
+				log.Error("unable to add finalizer", zap.Error(err))
 				return ctrl.Result{}, err
 			}
 			log.Info("added finalizer")
@@ -83,14 +88,14 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if controllerutil.ContainsFinalizer(customLabels, DeleteLabelsFinalizer) {
 			log.Info("removing finalizer")
 			if err := r.deleteNameSpaceLabels(ctx, customLabels, namespace); err != nil {
-				log.Error(err, "unable to remove labels")
+				log.Error("unable to remove labels", zap.Error(err))
 				return ctrl.Result{}, err
 			}
 			log.Info("deleted labels from namespace")
 			// remove finalizer
 			controllerutil.RemoveFinalizer(customLabels, DeleteLabelsFinalizer)
 			if err := r.Update(ctx, customLabels); err != nil {
-				log.Error(err, "error removing finalizer")
+				log.Error("error removing finalizer", zap.Error(err))
 				return ctrl.Result{}, err
 			}
 			log.Info("Removed finalizer")
@@ -125,11 +130,11 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	if err := r.Client.Update(ctx, namespace); err != nil {
-		log.Error(err, "error adding labels")
+		log.Error("error adding labels", zap.Error(err))
 		customLabels.Status.Applied = false
 		customLabels.Status.Message = "error adding labels to namespace"
 		if err := r.Client.Status().Update(ctx, customLabels); err != nil {
-			log.Error(err, "unable to modify custom label status")
+			log.Error("unable to modify custom label status", zap.Error(err))
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, err
@@ -139,7 +144,7 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	log.Info("updating labels object status")
 
 	if err := r.Client.Status().Update(ctx, customLabels); err != nil {
-		log.Error(err, "unable to modify custom label status")
+		log.Error("unable to modify custom label status", zap.Error(err))
 
 		return ctrl.Result{}, err
 	}
