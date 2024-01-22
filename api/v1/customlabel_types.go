@@ -20,19 +20,21 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // CustomLabelSpec defines the desired state of CustomLabel
 type CustomLabelSpec struct {
-	// map of custom labels to add to namespace
+	//CustomLabels: Map of custom labels that are added to namespace.
+	//The actual name of the label in the namespace will be crdname/labelname
 	CustomLabels map[string]string `json:"customLabels,omitempty"`
 }
 
 // CustomLabelStatus defines the observed state of CustomLabel
 type CustomLabelStatus struct {
-	// TRUE if labels have been added, else FALSE
-	Applied bool   `json:"applied"`
+	// Applied: The applied field will only be true if the labels are added to the namespace
+	// Otherwise it will be false
+	Applied bool `json:"applied"`
+
+	//Message: Gives additional info regarding the customlabel status
+	//or any error that occurred
 	Message string `json:"message,omitempty"`
 }
 

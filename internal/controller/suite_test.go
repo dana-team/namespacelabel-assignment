@@ -19,23 +19,24 @@ package controller
 import (
 	"context"
 	"fmt"
+	"github.com/onsi/gomega/gexec"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"path/filepath"
 	"runtime"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"testing"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-	ctrl "sigs.k8s.io/controller-runtime"
+	"time"
 
 	labelsv1 "github.com/dvirgilad/namespacelabel-assignment/api/v1"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -56,9 +57,10 @@ func TestControllers(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 	ctx, cancel = context.WithCancel(context.Background())
 
+	testLog := zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true))
+	logf.SetLogger(testLog)
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
@@ -91,8 +93,9 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	err = (&CustomLabelReconciler{
-		Client: k8sClient,
-		Scheme: k8sManager.GetScheme(),
+		Client:            k8sClient,
+		Scheme:            k8sManager.GetScheme(),
+		ProtectedPrefixes: "kubernetes.io,openshift.io",
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -100,12 +103,9 @@ var _ = BeforeSuite(func() {
 		defer GinkgoRecover()
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
+		gexec.KillAndWait(4 * time.Second)
+		err := testEnv.Stop()
+		Expect(err).ToNot(HaveOccurred())
 	}()
 
 })
-
-//var _ = AfterSuite(func() {
-//	By("tearing down the test environment")
-//	err := testEnv.Stop()
-//	Expect(err).NotTo(HaveOccurred())
-//})
