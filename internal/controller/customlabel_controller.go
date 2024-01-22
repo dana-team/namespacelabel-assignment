@@ -18,9 +18,12 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"go.elastic.co/ecszap"
 	"go.uber.org/zap"
 	"os"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"strings"
 
 	labelsv1 "github.com/dvirgilad/namespacelabel-assignment/api/v1"
@@ -107,15 +110,10 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		log.Error("unable to remove labels", zap.Error(err))
 		return ctrl.Result{}, err
 	}
-	// remove labels from namespace
-	if err := r.Client.Update(ctx, namespace); err != nil {
-		log.Error("unable to remove stale labels", zap.Error(err))
-		return ctrl.Result{}, err
 
-	}
 	//add labels
 	if err := r.AddNamespaceLabels(customLabels, namespace, protectedPrefixArray); err != nil {
-		log.Error("unable to remove labels", zap.Error(err))
+		log.Error("unable to add labels", zap.Error(err))
 		return ctrl.Result{}, err
 	}
 	if err := r.Client.Update(ctx, namespace); err != nil {
@@ -144,6 +142,36 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 // SetupWithManager sets up the controller with the Manager.
 func (r *CustomLabelReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&labelsv1.CustomLabel{}).
-		Complete(r)
+		For(&labelsv1.CustomLabel{}).Watches(
+		&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(r.EnqueueRequestsOnNamespaceChange),
+	).Complete(r)
+}
+
+func (r *CustomLabelReconciler) EnqueueRequestsOnNamespaceChange(ctx context.Context, object client.Object) []reconcile.Request {
+	updatedNamespace := object.(*corev1.Namespace)
+	customLabelList := &labelsv1.CustomLabelList{}
+	if err := r.List(ctx, customLabelList, client.InNamespace(updatedNamespace.Name)); err != nil {
+		/// can't get labels, return nothing
+		return []reconcile.Request{}
+	}
+	var requests []reconcile.Request
+	for _, customLabel := range customLabelList.Items {
+		for k, v := range customLabel.Spec.CustomLabels {
+			labelPrefix := fmt.Sprintf("%s/%s", customLabel.Name, k)
+			if updatedNamespace.Labels[labelPrefix] != v {
+				req := reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      customLabel.Name,
+						Namespace: customLabel.Namespace,
+					},
+				}
+				requests = append(requests, req)
+			}
+		}
+
+	}
+	if len(requests) == 0 {
+		return []reconcile.Request{}
+	}
+	return requests
 }
