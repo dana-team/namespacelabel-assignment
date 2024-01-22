@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	labelsv1 "github.com/dvirgilad/namespacelabel-assignment/api/v1"
 	"go.uber.org/zap"
@@ -47,39 +48,38 @@ func (r *CustomLabelReconciler) DeleteFinalizer(ctx context.Context, customLabel
 func (r *CustomLabelReconciler) AddNamespaceLabels(customLabel *labelsv1.CustomLabel, namespace *corev1.Namespace, protectedPrefixArray []string) error {
 	for k, v := range customLabel.Spec.CustomLabels {
 		// Skip protected labels that contain a protected prefix
-		contains := false
 		for _, j := range protectedPrefixArray {
 			if strings.Contains(k, j) {
-				contains = true
-				break
+				err := errors.New("attempting to add a label containing protected string")
+				return err
 			}
 		}
-		if !contains {
-			// Prefix the label key with the name of the custom resource
-			customKey := fmt.Sprintf("%s/%s", customLabel.Name, k)
-			namespace.Labels[customKey] = v
+		_, ok := namespace.Labels[k]
+		if ok {
+			err := errors.New(fmt.Sprintf("attempting to edit a label controlled by another crd: %s", k))
+			return err
 		}
+		// Add label to namespace
+		namespace.Labels[k] = v
 	}
 	return nil
 }
 
-func (r *CustomLabelReconciler) DeleteNameSpaceLabels(customLabel *labelsv1.CustomLabel, namespace *corev1.Namespace, protectedPrefixArray []string) error {
-	for k := range namespace.ObjectMeta.Labels {
-		// Skip protected labels that contain a protected prefix
-		contains := false
-		for _, j := range protectedPrefixArray {
-
-			if strings.Contains(k, j) {
-				contains = true
-				break
-			}
-		}
-		if !contains {
-			if strings.HasPrefix(k, customLabel.Name) {
-				// Delete labels with prefix
-				delete(namespace.Labels, k)
-			}
+func (r *CustomLabelReconciler) DeleteNameSpaceLabels(customLabel *labelsv1.CustomLabel, namespace *corev1.Namespace) {
+	for k, v := range namespace.ObjectMeta.Labels {
+		_, ok := customLabel.Spec.CustomLabels[k]
+		if ok && v == customLabel.Spec.CustomLabels[k] {
+			// Delete labels with that exist in the CRD and that have the same value
+			delete(namespace.Labels, k)
 		}
 	}
-	return nil
+}
+
+// Updates the status of the CRD with any errors that occured or if it succeeded
+func (r *CustomLabelReconciler) UpdateCustomLabelStatus(ctx context.Context, CustomLabel *labelsv1.CustomLabel, applied bool, message string) {
+	CustomLabel.Status.Applied = applied
+	CustomLabel.Status.Message = message
+	if err := r.Client.Status().Update(ctx, CustomLabel); err != nil {
+		r.Log.Error("unable to modify custom label status", zap.Error(err))
+	}
 }
