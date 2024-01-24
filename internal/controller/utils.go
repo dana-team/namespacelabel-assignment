@@ -39,10 +39,9 @@ func (r *CustomLabelReconciler) DeleteFinalizer(ctx context.Context, customLabel
 		}
 		log.Info("Removed finalizer")
 		return true, nil
-	} else {
-		//Finalizer already deleted
-		return false, nil
 	}
+	//Finalizer already deleted
+	return false, nil
 }
 func (r *CustomLabelReconciler) AddNamespaceLabels(customLabel *labelsv1.CustomLabel, namespace *corev1.Namespace, protectedPrefixArray []string) error {
 	for k, v := range customLabel.Spec.CustomLabels {

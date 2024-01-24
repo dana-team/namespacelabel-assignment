@@ -69,23 +69,7 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	if customLabels.ObjectMeta.DeletionTimestamp.IsZero() {
-		//object is not being deleted
-		//add finalizer
-		ok, err := r.AddFinalizer(ctx, customLabels, log)
-		if err != nil {
-			if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, false, err.Error()); err != nil {
-				return ctrl.Result{}, statusErr
-			}
-
-			return ctrl.Result{}, err
-		}
-		if ok {
-
-			return ctrl.Result{}, nil
-		}
-
-	} else {
+	if !customLabels.ObjectMeta.DeletionTimestamp.IsZero() {
 		// object is being deleted
 		log.Info("deleting labels")
 		//check if deleting protected labels and delete labels
@@ -112,8 +96,22 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 				return ctrl.Result{}, nil
 			}
 		}
-
 	}
+	//object is not being deleted
+	//add finalizer
+	ok, err := r.AddFinalizer(ctx, customLabels, log)
+	if err != nil {
+		if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, false, err.Error()); err != nil {
+			return ctrl.Result{}, statusErr
+		}
+
+		return ctrl.Result{}, err
+	}
+	if ok {
+
+		return ctrl.Result{}, nil
+	}
+
 	// delete old labels
 	log.Info("deleting stale labels")
 	r.DeleteNameSpaceLabels(customLabels, namespace)
