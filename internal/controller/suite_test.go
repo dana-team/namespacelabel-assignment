@@ -20,7 +20,10 @@ import (
 	"context"
 	"fmt"
 	"github.com/onsi/gomega/gexec"
+	"go.elastic.co/ecszap"
+	uberzap "go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"os"
 	"path/filepath"
 	"runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -91,11 +94,13 @@ var _ = BeforeSuite(func() {
 		Scheme: scheme.Scheme,
 	})
 	Expect(err).ToNot(HaveOccurred())
-
+	encoderConfig := ecszap.NewDefaultEncoderConfig()
+	core := ecszap.NewCore(encoderConfig, os.Stdout, uberzap.DebugLevel)
 	err = (&CustomLabelReconciler{
 		Client:            k8sClient,
 		Scheme:            k8sManager.GetScheme(),
 		ProtectedPrefixes: "kubernetes.io,openshift.io",
+		Log:               uberzap.New(core, uberzap.AddCaller()),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

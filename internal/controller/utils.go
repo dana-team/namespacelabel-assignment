@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	labelsv1 "github.com/dvirgilad/namespacelabel-assignment/api/v1"
 	"go.uber.org/zap"
@@ -47,20 +46,25 @@ func (r *CustomLabelReconciler) DeleteFinalizer(ctx context.Context, customLabel
 }
 func (r *CustomLabelReconciler) AddNamespaceLabels(customLabel *labelsv1.CustomLabel, namespace *corev1.Namespace, protectedPrefixArray []string) error {
 	for k, v := range customLabel.Spec.CustomLabels {
+		var valid = true
 		// Skip protected labels that contain a protected prefix
 		for _, j := range protectedPrefixArray {
 			if strings.Contains(k, j) {
-				err := errors.New("attempting to add a label containing protected string")
-				return err
+				r.Log.Info(fmt.Sprintf("attemting to add a label with a protected prefix: %s", j))
+				valid = false
+				break
 			}
 		}
 		_, ok := namespace.Labels[k]
 		if ok {
-			err := errors.New(fmt.Sprintf("attempting to edit a label controlled by another crd: %s", k))
-			return err
+			r.Log.Info(fmt.Sprintf("attempting to edit a label controlled by another crd: %s", k))
+			break
 		}
-		// Add label to namespace
-		namespace.Labels[k] = v
+		if valid {
+			// Add label to namespace
+			namespace.Labels[k] = v
+		}
+
 	}
 	return nil
 }
@@ -76,10 +80,12 @@ func (r *CustomLabelReconciler) DeleteNameSpaceLabels(customLabel *labelsv1.Cust
 }
 
 // Updates the status of the CRD with any errors that occured or if it succeeded
-func (r *CustomLabelReconciler) UpdateCustomLabelStatus(ctx context.Context, CustomLabel *labelsv1.CustomLabel, applied bool, message string) {
+func (r *CustomLabelReconciler) UpdateCustomLabelStatus(ctx context.Context, CustomLabel *labelsv1.CustomLabel, applied bool, message string) error {
 	CustomLabel.Status.Applied = applied
 	CustomLabel.Status.Message = message
 	if err := r.Client.Status().Update(ctx, CustomLabel); err != nil {
-		r.Log.Error("unable to modify custom label status", zap.Error(err))
+		r.Log.Error(fmt.Sprintf("unable to modify custom label status: %s", CustomLabel.Name), zap.Error(err))
+		return err
 	}
+	return nil
 }
