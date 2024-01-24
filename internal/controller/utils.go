@@ -10,6 +10,8 @@ import (
 	"strings"
 )
 
+// Checks if the given CustomLabels CRD has the DeleteLabelsFinalizer
+// Returns true if finalizer did not exist and was added
 func (r *CustomLabelReconciler) AddFinalizer(ctx context.Context, customLabels *labelsv1.CustomLabel, log *zap.Logger) (ok bool, err error) {
 
 	if !controllerutil.ContainsFinalizer(customLabels, DeleteLabelsFinalizer) {
@@ -21,13 +23,14 @@ func (r *CustomLabelReconciler) AddFinalizer(ctx context.Context, customLabels *
 		}
 		log.Info("added finalizer")
 		return true, nil
-	} else {
-
-		return false, nil
 	}
+
+	return false, nil
 
 }
 
+// Checks if the given CRD contains the DeleteLabelsFinalizer and removes it.
+// Returns true if finalizer existed and was removed
 func (r *CustomLabelReconciler) DeleteFinalizer(ctx context.Context, customLabels *labelsv1.CustomLabel, log *zap.Logger) (bool, error) {
 	if controllerutil.ContainsFinalizer(customLabels, DeleteLabelsFinalizer) {
 		log.Info("removing finalizer")
@@ -43,6 +46,8 @@ func (r *CustomLabelReconciler) DeleteFinalizer(ctx context.Context, customLabel
 	//Finalizer already deleted
 	return false, nil
 }
+
+// Adds the labels in the spec of the given NamespaceLabel CRD to the given namespace
 func (r *CustomLabelReconciler) AddNamespaceLabels(customLabel *labelsv1.CustomLabel, namespace *corev1.Namespace, protectedPrefixArray []string) error {
 	for k, v := range customLabel.Spec.CustomLabels {
 		var valid = true
@@ -68,6 +73,8 @@ func (r *CustomLabelReconciler) AddNamespaceLabels(customLabel *labelsv1.CustomL
 	return nil
 }
 
+// Deletes the given namespace labels from the given namespace
+// Will only delete labels that exist in the namespace with the same value as in the label CRD
 func (r *CustomLabelReconciler) DeleteNameSpaceLabels(customLabel *labelsv1.CustomLabel, namespace *corev1.Namespace) {
 	for k, v := range namespace.ObjectMeta.Labels {
 		_, ok := customLabel.Spec.CustomLabels[k]
