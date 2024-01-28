@@ -26,6 +26,10 @@ type CustomLabelSpec struct {
 	//The actual name of the label in the namespace will be crdname/labelname
 	CustomLabels map[string]string `json:"customLabels,omitempty"`
 }
+type LabelStatus struct {
+	Applied bool   `json:"applied"`
+	Value   string `json:"value"`
+}
 
 // CustomLabelStatus defines the observed state of CustomLabel
 type CustomLabelStatus struct {
@@ -36,6 +40,10 @@ type CustomLabelStatus struct {
 	//Message: Gives additional info regarding the customlabel status
 	//or any error that occurred
 	Message string `json:"message,omitempty"`
+
+	//PerLabelStatus: Information regarding each label in the spec,
+	// whether it was applied and the previous value
+	PerLabelStatus map[string]LabelStatus `json:"perLabelStatus,omitempty"`
 }
 
 //+kubebuilder:object:root=true

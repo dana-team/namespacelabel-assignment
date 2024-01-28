@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// Checks if the given CustomLabels CRD has the DeleteLabelsFinalizer
+// AddFinalizer Checks if the given CustomLabels CRD has the DeleteLabelsFinalizer
 // Returns true if finalizer did not exist and was added
 func (r *CustomLabelReconciler) AddFinalizer(ctx context.Context, customLabels *labelsv1.CustomLabel, log *zap.Logger) (ok bool, err error) {
 
@@ -29,7 +29,7 @@ func (r *CustomLabelReconciler) AddFinalizer(ctx context.Context, customLabels *
 
 }
 
-// Checks if the given CRD contains the DeleteLabelsFinalizer and removes it.
+// DeleteFinalizer Checks if the given CRD contains the DeleteLabelsFinalizer and removes it.
 // Returns true if finalizer existed and was removed
 func (r *CustomLabelReconciler) DeleteFinalizer(ctx context.Context, customLabels *labelsv1.CustomLabel, log *zap.Logger) (bool, error) {
 	if controllerutil.ContainsFinalizer(customLabels, DeleteLabelsFinalizer) {
@@ -47,48 +47,122 @@ func (r *CustomLabelReconciler) DeleteFinalizer(ctx context.Context, customLabel
 	return false, nil
 }
 
-// Adds the labels in the spec of the given NamespaceLabel CRD to the given namespace
-func (r *CustomLabelReconciler) AddNamespaceLabels(customLabel *labelsv1.CustomLabel, namespace *corev1.Namespace, protectedPrefixArray []string) error {
+// AddNamespaceLabels Adds the labels in the spec of the given NamespaceLabel CRD to the given namespace
+func (r *CustomLabelReconciler) AddNamespaceLabels(customLabel *labelsv1.CustomLabel, namespace *corev1.Namespace, protectedPrefixArray []string, labelsToAdd map[string]string) map[string]labelsv1.LabelStatus {
+	labelStatusMap := map[string]labelsv1.LabelStatus{}
 	for k, v := range customLabel.Spec.CustomLabels {
-		var valid = true
+		_, ok := labelsToAdd[k]
+		valid := true
+		labelStatus := &labelsv1.LabelStatus{}
+		if !ok {
+			r.Log.Info(fmt.Sprintf("not adding label: %s", k))
+			valid = false
+			labelStatus.Applied = false
+			labelStatus.Value = v
+			labelStatusMap[k] = *labelStatus
+			continue
+
+		}
+		if _, ok := namespace.Labels[k]; ok {
+			r.Log.Info(fmt.Sprintf("label already exists: %s", k))
+			valid = false
+			labelStatus.Applied = false
+			labelStatus.Value = v
+			labelStatusMap[k] = *labelStatus
+		}
 		// Skip protected labels that contain a protected prefix
 		for _, j := range protectedPrefixArray {
 			if strings.Contains(k, j) {
-				r.Log.Info(fmt.Sprintf("attemting to add a label with a protected prefix: %s", j))
 				valid = false
+				r.Log.Info(fmt.Sprintf("attemting to add a label with a protected prefix: %s", j))
+				labelStatus.Applied = false
+				labelStatus.Value = v
+				labelStatusMap[k] = *labelStatus
 				break
+
 			}
-		}
-		_, ok := namespace.Labels[k]
-		if ok {
-			r.Log.Info(fmt.Sprintf("attempting to edit a label controlled by another crd: %s", k))
-			break
 		}
 		if valid {
 			// Add label to namespace
 			namespace.Labels[k] = v
+			labelStatus.Applied = true
+			labelStatus.Value = v
+			r.Log.Info(fmt.Sprintf("added label to namespace: %s", k))
+			labelStatusMap[k] = *labelStatus
 		}
 
 	}
-	return nil
+	return labelStatusMap
 }
 
-// Deletes the given namespace labels from the given namespace
+// ParseLabels: go through PerLabelStatus of crd to check if labels have already been applied.
+// Change labels accordingly
+func (r *CustomLabelReconciler) ParseLabels(customLabel *labelsv1.CustomLabel, namespace *corev1.Namespace) map[string]string {
+	lastLabelState := customLabel.Status.PerLabelStatus
+	if len(lastLabelState) == 0 {
+		r.Log.Info("no label status, CRD is new")
+		return customLabel.Spec.CustomLabels
+	}
+	labelsToAdd := map[string]string{}
+	for k, v := range customLabel.Spec.CustomLabels {
+		j, ok := lastLabelState[k]
+		if !ok {
+			// label controlled by another CRD
+			if _, lok := namespace.Labels[k]; lok {
+				r.Log.Info(fmt.Sprintf("Label already exists: %s", k))
+				continue
+			} else {
+				//new label
+				labelsToAdd[k] = v
+				continue
+			}
+		}
+		if j.Applied {
+			if j.Value != v {
+				// Label with edited value
+				r.Log.Info(fmt.Sprintf("Applied label was changed: %s", k))
+				labelsToAdd[k] = v
+				continue
+			}
+			//enedited value
+			r.Log.Info(fmt.Sprintf("Applied label unchanged, skipping: %s", k))
+			continue
+
+		}
+
+	}
+	for a, b := range lastLabelState {
+		if b.Applied {
+			// label was deleted from crd
+			_, ok := customLabel.Labels[a]
+			if !ok {
+				r.Log.Info(fmt.Sprintf("Applied label was deleted: %s", a))
+				delete(namespace.Labels, a)
+
+			}
+		}
+	}
+
+	return labelsToAdd
+}
+
+// DeleteNameSpaceLabels Deletes the given namespace labels from the given namespace
 // Will only delete labels that exist in the namespace with the same value as in the label CRD
 func (r *CustomLabelReconciler) DeleteNameSpaceLabels(customLabel *labelsv1.CustomLabel, namespace *corev1.Namespace) {
 	for k, v := range namespace.ObjectMeta.Labels {
-		_, ok := customLabel.Spec.CustomLabels[k]
-		if ok && v == customLabel.Spec.CustomLabels[k] {
+		j, ok := customLabel.Spec.CustomLabels[k]
+		if ok && v == j && customLabel.Status.PerLabelStatus[k].Applied {
 			// Delete labels with that exist in the CRD and that have the same value
 			delete(namespace.Labels, k)
 		}
 	}
 }
 
-// Updates the status of the CRD with any errors that occured or if it succeeded
-func (r *CustomLabelReconciler) UpdateCustomLabelStatus(ctx context.Context, CustomLabel *labelsv1.CustomLabel, applied bool, message string) error {
+// UpdateCustomLabelStatus Updates the status of the CRD with any errors that occured or if it succeeded
+func (r *CustomLabelReconciler) UpdateCustomLabelStatus(ctx context.Context, CustomLabel *labelsv1.CustomLabel, applied bool, message string, labelStatus map[string]labelsv1.LabelStatus) error {
 	CustomLabel.Status.Applied = applied
 	CustomLabel.Status.Message = message
+	CustomLabel.Status.PerLabelStatus = labelStatus
 	if err := r.Client.Status().Update(ctx, CustomLabel); err != nil {
 		r.Log.Error(fmt.Sprintf("unable to modify custom label status: %s", CustomLabel.Name), zap.Error(err))
 		return err

@@ -128,8 +128,22 @@ var _ = Describe("customlabels controller", func() {
 				return moreCreatedCustomLabels.Status.Applied
 			},
 				timeout, interval,
-			).Should(BeFalse(), "CR status.Applied of second crd should be false")
-
+			).Should(BeTrue(), "CR status.Applied of second crd should be True")
+			namespaceLookupKey := types.NamespacedName{Name: CustomLabelNamespace}
+			searchNameSpace := &corev1.Namespace{}
+			Eventually(func() bool {
+				Expect(k8sClient.Get(ctx, namespaceLookupKey, searchNameSpace)).Should(BeNil(), "should find namespace")
+				for k := range labelsToAdd {
+					v, ok := searchNameSpace.Labels[k]
+					if ok && labelsToAdd[k] == v {
+						continue
+					} else {
+						return false
+					}
+				}
+				return true
+			}, timeout, interval,
+			).Should(BeTrue(), "all labels in namespace should be from first CRD")
 		})
 
 	})
