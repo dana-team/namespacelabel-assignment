@@ -50,31 +50,31 @@ func (r *CustomLabelReconciler) DeleteFinalizer(ctx context.Context, customLabel
 // AddNamespaceLabels Adds the labels in the spec of the given NamespaceLabel CRD to the given namespace
 func (r *CustomLabelReconciler) AddNamespaceLabels(customLabel *labelsv1.CustomLabel, namespace *corev1.Namespace, protectedPrefixArray []string, labelsToAdd map[string]string) map[string]labelsv1.LabelStatus {
 	labelStatusMap := map[string]labelsv1.LabelStatus{}
+
 	for k, v := range customLabel.Spec.CustomLabels {
 		_, ok := labelsToAdd[k]
-		valid := true
 		labelStatus := &labelsv1.LabelStatus{}
 		if !ok {
 			r.Log.Info(fmt.Sprintf("not adding label: %s", k))
-			valid = false
 			labelStatus.Applied = false
 			labelStatus.Value = v
 			labelStatusMap[k] = *labelStatus
 			continue
-
 		}
-		if _, ok := namespace.Labels[k]; ok {
+		if _, nok := namespace.Labels[k]; nok {
 			r.Log.Info(fmt.Sprintf("label already exists: %s", k))
-			valid = false
 			labelStatus.Applied = false
 			labelStatus.Value = v
 			labelStatusMap[k] = *labelStatus
+			continue
 		}
+		var valid = true
+
 		// Skip protected labels that contain a protected prefix
 		for _, j := range protectedPrefixArray {
 			if strings.Contains(k, j) {
-				valid = false
 				r.Log.Info(fmt.Sprintf("attemting to add a label with a protected prefix: %s", j))
+				valid = false
 				labelStatus.Applied = false
 				labelStatus.Value = v
 				labelStatusMap[k] = *labelStatus
@@ -82,14 +82,15 @@ func (r *CustomLabelReconciler) AddNamespaceLabels(customLabel *labelsv1.CustomL
 
 			}
 		}
-		if valid {
-			// Add label to namespace
-			namespace.Labels[k] = v
-			labelStatus.Applied = true
-			labelStatus.Value = v
-			r.Log.Info(fmt.Sprintf("added label to namespace: %s", k))
-			labelStatusMap[k] = *labelStatus
+		if !valid {
+			continue
 		}
+		// Add label to namespace
+		namespace.Labels[k] = v
+		labelStatus.Applied = true
+		labelStatus.Value = v
+		r.Log.Info(fmt.Sprintf("added label to namespace: %s", k))
+		labelStatusMap[k] = *labelStatus
 
 	}
 	return labelStatusMap
