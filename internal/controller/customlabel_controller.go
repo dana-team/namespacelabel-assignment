@@ -45,6 +45,8 @@ const DeleteLabelsFinalizer = "labels.dvir.io/finalizer"
 // +kubebuilder:rbac:groups=labels.dvir.io,resources=customlabels,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=labels.dvir.io,resources=customlabels/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=labels.dvir.io,resources=customlabels/finalizers,verbs=update
+// +kubebuilder:rbac:groups=core.v1,resources=namespace,verbs=watch;update
+
 func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 
 	log := r.Log
