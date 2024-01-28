@@ -5,6 +5,13 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - namespace
+  verbs:
+  - update
+  - watch
+- apiGroups:
   - labels.dvir.io
   resources:
   - customlabels

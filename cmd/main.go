@@ -18,6 +18,8 @@ package main
 
 import (
 	"flag"
+	"go.elastic.co/ecszap"
+	uberzap "go.uber.org/zap"
 	"os"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
@@ -80,11 +82,13 @@ func main() {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
-
+	encoderConfig := ecszap.NewDefaultEncoderConfig()
+	core := ecszap.NewCore(encoderConfig, os.Stdout, uberzap.DebugLevel)
 	if err = (&controller.CustomLabelReconciler{
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
 		ProtectedPrefixes: protectedPrefixes,
+		Log:               uberzap.New(core, uberzap.AddCaller()),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "CustomLabel")
 		os.Exit(1)

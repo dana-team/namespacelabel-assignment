@@ -56,6 +56,20 @@ spec:
                 description: 'Message: Gives additional info regarding the customlabel
                   status or any error that occurred'
                 type: string
+              perLabelStatus:
+                additionalProperties:
+                  properties:
+                    applied:
+                      type: boolean
+                    value:
+                      type: string
+                  required:
+                  - applied
+                  - value
+                  type: object
+                description: 'PerLabelStatus: Information regarding each label in
+                  the spec, whether it was applied and the previous value'
+                type: object
             required:
             - applied
             type: object

@@ -19,9 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
-	"go.elastic.co/ecszap"
 	"go.uber.org/zap"
-	"os"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"strings"
@@ -47,16 +45,16 @@ const DeleteLabelsFinalizer = "labels.dvir.io/finalizer"
 // +kubebuilder:rbac:groups=labels.dvir.io,resources=customlabels,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=labels.dvir.io,resources=customlabels/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=labels.dvir.io,resources=customlabels/finalizers,verbs=update
+// +kubebuilder:rbac:groups=core.v1,resources=namespace,verbs=watch;update
+
 func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	encoderConfig := ecszap.NewDefaultEncoderConfig()
-	core := ecszap.NewCore(encoderConfig, os.Stdout, zap.DebugLevel)
-	r.Log = zap.New(core, zap.AddCaller())
+
 	log := r.Log
 	protectedPrefixArray := strings.Split(r.ProtectedPrefixes, ",")
 	var customLabels = &labelsv1.CustomLabel{}
 	if err := r.Get(ctx, req.NamespacedName, customLabels); err != nil {
 		if client.IgnoreNotFound(err) != nil {
-			log.Error("unable to fetch custom labels", zap.Error(err))
+			log.Error(fmt.Sprintf("unable to fetch custom labels: %s", req.Name), zap.Error(err))
 			return ctrl.Result{}, err
 		} else {
 			return ctrl.Result{}, nil
@@ -66,33 +64,23 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	namespace := &corev1.Namespace{}
 	err := r.Get(ctx, types.NamespacedName{Name: req.Namespace}, namespace)
 	if err != nil {
-		log.Error("unable to find Namespace", zap.Error(err))
-		r.UpdateCustomLabelStatus(ctx, customLabels, false, err.Error())
+		log.Error(fmt.Sprintf("unable to find Namespace: %s", req.Namespace), zap.Error(err))
+		if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, false, err.Error(), map[string]labelsv1.LabelStatus{}); err != nil {
+			return ctrl.Result{}, statusErr
+		}
 		return ctrl.Result{}, err
 	}
 
-	if customLabels.ObjectMeta.DeletionTimestamp.IsZero() {
-		//object is not being deleted
-		//add finalizer
-		ok, err := r.AddFinalizer(ctx, customLabels, log)
-		if err != nil {
-			r.UpdateCustomLabelStatus(ctx, customLabels, false, err.Error())
-
-			return ctrl.Result{}, err
-		}
-		if ok {
-
-			return ctrl.Result{}, nil
-		}
-
-	} else {
+	if !customLabels.ObjectMeta.DeletionTimestamp.IsZero() {
 		// object is being deleted
 		log.Info("deleting labels")
 		//check if deleting protected labels and delete labels
 		r.DeleteNameSpaceLabels(customLabels, namespace)
 		// remove labels from namespace
 		if err := r.Client.Update(ctx, namespace); err != nil {
-			r.UpdateCustomLabelStatus(ctx, customLabels, false, err.Error())
+			if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, false, err.Error(), map[string]labelsv1.LabelStatus{}); err != nil {
+				return ctrl.Result{}, statusErr
+			}
 
 			return ctrl.Result{}, err
 
@@ -100,7 +88,9 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		log.Info("deleted labels from namespace")
 		ok, err := r.DeleteFinalizer(ctx, customLabels, log)
 		if err != nil {
-			r.UpdateCustomLabelStatus(ctx, customLabels, false, err.Error())
+			if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, false, err.Error(), map[string]labelsv1.LabelStatus{}); err != nil {
+				return ctrl.Result{}, statusErr
+			}
 
 			return ctrl.Result{}, err
 		} else {
@@ -108,25 +98,42 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 				return ctrl.Result{}, nil
 			}
 		}
-
 	}
+	//object is not being deleted
+	//add finalizer
+	ok, err := r.AddFinalizer(ctx, customLabels, log)
+	if err != nil {
+		if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, false, err.Error(), map[string]labelsv1.LabelStatus{}); err != nil {
+			return ctrl.Result{}, statusErr
+		}
+
+		return ctrl.Result{}, err
+	}
+	if ok {
+
+		return ctrl.Result{}, nil
+	}
+
 	// delete old labels
-	log.Info("deleting stale labels")
-	r.DeleteNameSpaceLabels(customLabels, namespace)
+
+	labelsToAdd := r.ParseLabels(customLabels, namespace)
+	if len(labelsToAdd) == 0 {
+		log.Info("no new labels to add")
+		return ctrl.Result{}, nil
+	}
 
 	//add labels
-	if err := r.AddNamespaceLabels(customLabels, namespace, protectedPrefixArray); err != nil {
-		log.Error("unable to add labels", zap.Error(err))
-		r.UpdateCustomLabelStatus(ctx, customLabels, false, err.Error())
-		return ctrl.Result{}, fmt.Errorf("failed to add labels: %s", err.Error())
-	}
+	labelsStatus := r.AddNamespaceLabels(customLabels, namespace, protectedPrefixArray, labelsToAdd)
+
 	if err := r.Client.Update(ctx, namespace); err != nil {
 		log.Error("error adding labels", zap.Error(err))
 		customLabels.Status.Applied = false
 		customLabels.Status.Message = "error adding labels to namespace"
 		if err := r.Client.Status().Update(ctx, customLabels); err != nil {
 			log.Error("unable to modify custom label status", zap.Error(err))
-			r.UpdateCustomLabelStatus(ctx, customLabels, false, err.Error())
+			if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, false, err.Error(), map[string]labelsv1.LabelStatus{}); err != nil {
+				return ctrl.Result{}, statusErr
+			}
 
 			return ctrl.Result{}, err
 		}
@@ -135,7 +142,9 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	log.Info("edited namespace with new labels")
 
 	log.Info("updating labels object status")
-	r.UpdateCustomLabelStatus(ctx, customLabels, true, "labels applied")
+	if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, true, "labels applied", labelsStatus); err != nil {
+		return ctrl.Result{}, statusErr
+	}
 
 	log.Info("added namespace labels")
 	return ctrl.Result{}, nil
