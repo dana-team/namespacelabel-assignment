@@ -94,6 +94,7 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		log.Info("no new labels to add")
 		return ctrl.Result{}, nil
 	}
+	r.DeleteLabels(customLabels, namespace)
 
 	labelsStatus := r.AddNamespaceLabels(customLabels, namespace, strings.Split(r.ProtectedPrefixes, ","), labelsToAdd)
 	if err := r.UpdateNamespace(ctx, customLabels, namespace); err != nil {

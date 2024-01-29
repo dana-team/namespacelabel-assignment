@@ -171,14 +171,20 @@ func (r *CustomLabelReconciler) ParseLabels(customLabel *labelsv1.CustomLabel, n
 				labelsToAdd[k] = v
 				continue
 			}
-			//enedited value
+			//edited value
 			r.Log.Info(fmt.Sprintf("Applied label unchanged, skipping: %s", k))
 			continue
 
 		}
 
 	}
-	for a, b := range lastLabelState {
+
+	return labelsToAdd
+}
+
+// DeleteLabels delete from namespace applied labels that are not in spec anymore
+func (r *CustomLabelReconciler) DeleteLabels(customLabel *labelsv1.CustomLabel, namespace *corev1.Namespace) {
+	for a, b := range customLabel.Status.PerLabelStatus {
 		if b.Applied {
 			// label was deleted from crd
 			_, ok := customLabel.Labels[a]
@@ -189,8 +195,6 @@ func (r *CustomLabelReconciler) ParseLabels(customLabel *labelsv1.CustomLabel, n
 			}
 		}
 	}
-
-	return labelsToAdd
 }
 
 // DeleteNameSpaceLabels Deletes the given namespace labels from the given namespace

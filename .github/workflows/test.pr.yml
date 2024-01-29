@@ -18,9 +18,9 @@ jobs:
           go-version-file: go.mod
       - name: Go Vet
         run: go vet ./...
-      - name: Go Lint
-        run: |
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.55.2
-          golangci-lint run
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: v1.54
       - name: Unit-test
         run: make test
