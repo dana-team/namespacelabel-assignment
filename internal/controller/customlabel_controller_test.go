@@ -44,10 +44,10 @@ var _ = Describe("customlabels controller", func() {
 
 			Eventually(func() bool {
 				Expect(k8sClient.Get(ctx, customLabelsLookupKey, createdCustomLabels)).Should(BeNil(), "should find resource")
-				return createdCustomLabels.Status.Applied
+				return createdCustomLabels.Status.Message == "labels applied"
 			},
 				timeout, interval,
-			).Should(BeTrue(), "CR status.Applied should be true")
+			).Should(BeTrue(), "CR should be applied")
 			Eventually(func() bool {
 				Expect(k8sClient.Get(ctx, namespaceLookupKey, searchNameSpace)).Should(BeNil(), "should find namespace")
 				for k := range labelsToAdd {
@@ -119,13 +119,13 @@ var _ = Describe("customlabels controller", func() {
 			moreCreatedCustomLabels := &labelsv1.CustomLabel{}
 			Eventually(func() bool {
 				Expect(k8sClient.Get(ctx, customLabelsLookupKey, createdCustomLabels)).Should(BeNil(), "should find resource")
-				return createdCustomLabels.Status.Applied
+				return createdCustomLabels.Status.Message == "labels applied"
 			},
 				timeout, interval,
 			).Should(BeTrue(), "CR status.Applied of first crd should be true")
 			Eventually(func() bool {
 				Expect(k8sClient.Get(ctx, moreCustomLabelsLookupKey, moreCreatedCustomLabels)).Should(BeNil(), "should find resource")
-				return moreCreatedCustomLabels.Status.Applied
+				return moreCreatedCustomLabels.Status.Message == "labels applied"
 			},
 				timeout, interval,
 			).Should(BeTrue(), "CR status.Applied of second crd should be True")
