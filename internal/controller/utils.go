@@ -6,9 +6,36 @@ import (
 	labelsv1 "github.com/dvirgilad/namespacelabel-assignment/api/v1"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"strings"
 )
+
+// HandleDelete deletes labels from namespace
+func (r *CustomLabelReconciler) HandleDelete(ctx context.Context, customLabels *labelsv1.CustomLabel, namespace *corev1.Namespace) (ctrl.Result, error) {
+	//check if deleting protected labels and delete labels
+	r.DeleteNameSpaceLabels(customLabels, namespace)
+	// remove labels from namespace
+	if err := r.Client.Update(ctx, namespace); err != nil {
+		if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, false, err.Error(), map[string]labelsv1.LabelStatus{}); err != nil {
+			return ctrl.Result{}, statusErr
+		}
+
+		return ctrl.Result{}, err
+
+	}
+	r.Log.Info("deleted labels from namespace")
+	_, err := r.DeleteFinalizer(ctx, customLabels, r.Log)
+	if err != nil {
+		if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, false, err.Error(), map[string]labelsv1.LabelStatus{}); err != nil {
+			return ctrl.Result{}, statusErr
+		}
+
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{}, nil
+
+}
 
 // AddFinalizer Checks if the given CustomLabels CRD has the DeleteLabelsFinalizer
 // Returns true if finalizer did not exist and was added
@@ -94,6 +121,25 @@ func (r *CustomLabelReconciler) AddNamespaceLabels(customLabel *labelsv1.CustomL
 
 	}
 	return labelStatusMap
+}
+
+func (r *CustomLabelReconciler) UpdateNamespace(ctx context.Context, customLabels *labelsv1.CustomLabel, namespace *corev1.Namespace) error {
+	if err := r.Client.Update(ctx, namespace); err != nil {
+		r.Log.Error("error adding labels", zap.Error(err))
+		customLabels.Status.Applied = false
+		customLabels.Status.Message = "error adding labels to namespace"
+		if err := r.Client.Status().Update(ctx, customLabels); err != nil {
+			r.Log.Error("unable to modify custom label status", zap.Error(err))
+			if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, false, err.Error(), map[string]labelsv1.LabelStatus{}); err != nil {
+				return statusErr
+			}
+
+			return err
+		}
+		return err
+	}
+	return nil
+
 }
 
 // ParseLabels: go through PerLabelStatus of crd to check if labels have already been applied.
