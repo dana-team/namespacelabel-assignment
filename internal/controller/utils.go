@@ -17,7 +17,7 @@ func (r *CustomLabelReconciler) HandleDelete(ctx context.Context, customLabels *
 	r.DeleteNameSpaceLabels(customLabels, namespace)
 	// remove labels from namespace
 	if err := r.Client.Update(ctx, namespace); err != nil {
-		if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, false, err.Error(), map[string]labelsv1.LabelStatus{}); err != nil {
+		if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, err.Error(), map[string]labelsv1.LabelStatus{}); err != nil {
 			return ctrl.Result{}, statusErr
 		}
 
@@ -27,7 +27,7 @@ func (r *CustomLabelReconciler) HandleDelete(ctx context.Context, customLabels *
 	r.Log.Info("deleted labels from namespace")
 	_, err := r.DeleteFinalizer(ctx, customLabels, r.Log)
 	if err != nil {
-		if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, false, err.Error(), map[string]labelsv1.LabelStatus{}); err != nil {
+		if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, err.Error(), map[string]labelsv1.LabelStatus{}); err != nil {
 			return ctrl.Result{}, statusErr
 		}
 
@@ -123,14 +123,14 @@ func (r *CustomLabelReconciler) AddNamespaceLabels(customLabel *labelsv1.CustomL
 	return labelStatusMap
 }
 
+// UpdateNamespace edits namespace with new labels and returns any errors
 func (r *CustomLabelReconciler) UpdateNamespace(ctx context.Context, customLabels *labelsv1.CustomLabel, namespace *corev1.Namespace) error {
 	if err := r.Client.Update(ctx, namespace); err != nil {
 		r.Log.Error("error adding labels", zap.Error(err))
-		customLabels.Status.Applied = false
 		customLabels.Status.Message = "error adding labels to namespace"
 		if err := r.Client.Status().Update(ctx, customLabels); err != nil {
 			r.Log.Error("unable to modify custom label status", zap.Error(err))
-			if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, false, err.Error(), map[string]labelsv1.LabelStatus{}); err != nil {
+			if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, err.Error(), map[string]labelsv1.LabelStatus{}); err != nil {
 				return statusErr
 			}
 
@@ -142,7 +142,7 @@ func (r *CustomLabelReconciler) UpdateNamespace(ctx context.Context, customLabel
 
 }
 
-// ParseLabels: go through PerLabelStatus of crd to check if labels have already been applied.
+// ParseLabels go through PerLabelStatus of crd to check if labels have already been applied.
 // Change labels accordingly
 func (r *CustomLabelReconciler) ParseLabels(customLabel *labelsv1.CustomLabel, namespace *corev1.Namespace) map[string]string {
 	lastLabelState := customLabel.Status.PerLabelStatus
@@ -210,8 +210,7 @@ func (r *CustomLabelReconciler) DeleteNameSpaceLabels(customLabel *labelsv1.Cust
 }
 
 // UpdateCustomLabelStatus Updates the status of the CRD with any errors that occured or if it succeeded
-func (r *CustomLabelReconciler) UpdateCustomLabelStatus(ctx context.Context, CustomLabel *labelsv1.CustomLabel, applied bool, message string, labelStatus map[string]labelsv1.LabelStatus) error {
-	CustomLabel.Status.Applied = applied
+func (r *CustomLabelReconciler) UpdateCustomLabelStatus(ctx context.Context, CustomLabel *labelsv1.CustomLabel, message string, labelStatus map[string]labelsv1.LabelStatus) error {
 	CustomLabel.Status.Message = message
 	CustomLabel.Status.PerLabelStatus = labelStatus
 	if err := r.Client.Status().Update(ctx, CustomLabel); err != nil {

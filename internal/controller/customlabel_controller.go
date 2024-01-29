@@ -64,7 +64,7 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	err := r.Get(ctx, types.NamespacedName{Name: req.Namespace}, namespace)
 	if err != nil {
 		log.Error(fmt.Sprintf("unable to find Namespace: %s", req.Namespace), zap.Error(err))
-		if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, false, err.Error(), map[string]labelsv1.LabelStatus{}); err != nil {
+		if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, err.Error(), map[string]labelsv1.LabelStatus{}); err != nil {
 			return ctrl.Result{}, statusErr
 		}
 		return ctrl.Result{}, err
@@ -78,7 +78,7 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	//object is not being deleted
 	ok, err := r.AddFinalizer(ctx, customLabels, log)
 	if err != nil {
-		if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, false, err.Error(), map[string]labelsv1.LabelStatus{}); err != nil {
+		if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, err.Error(), map[string]labelsv1.LabelStatus{}); err != nil {
 			return ctrl.Result{}, statusErr
 		}
 
@@ -103,7 +103,7 @@ func (r *CustomLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	log.Info("edited namespace with new labels")
 
 	log.Info("updating labels object status")
-	if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, true, "labels applied", labelsStatus); err != nil {
+	if statusErr := r.UpdateCustomLabelStatus(ctx, customLabels, "labels applied", labelsStatus); err != nil {
 		return ctrl.Result{}, statusErr
 	}
 
