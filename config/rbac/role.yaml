@@ -5,7 +5,7 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - ""
+  - core.v1
   resources:
   - namespace
   verbs:

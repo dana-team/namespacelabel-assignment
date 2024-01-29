@@ -40,21 +40,15 @@ spec:
               customLabels:
                 additionalProperties:
                   type: string
-                description: 'CustomLabels: Map of custom labels that are added to
-                  namespace. The actual name of the label in the namespace will be
-                  crdname/labelname'
+                description: CustomLabels map of custom labels that are added to namespace
                 type: object
             type: object
           status:
             description: CustomLabelStatus defines the observed state of CustomLabel
             properties:
-              applied:
-                description: 'Applied: The applied field will only be true if the
-                  labels are added to the namespace Otherwise it will be false'
-                type: boolean
               message:
-                description: 'Message: Gives additional info regarding the customlabel
-                  status or any error that occurred'
+                description: Message Gives additional info regarding the customlabel
+                  status or any error that occurred
                 type: string
               perLabelStatus:
                 additionalProperties:
@@ -67,11 +61,9 @@ spec:
                   - applied
                   - value
                   type: object
-                description: 'PerLabelStatus: Information regarding each label in
-                  the spec, whether it was applied and the previous value'
+                description: PerLabelStatus Information regarding each label in the
+                  spec, whether it was applied and the previous value
                 type: object
-            required:
-            - applied
             type: object
         type: object
     served: true

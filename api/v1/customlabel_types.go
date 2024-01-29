@@ -22,8 +22,7 @@ import (
 
 // CustomLabelSpec defines the desired state of CustomLabel
 type CustomLabelSpec struct {
-	//CustomLabels: Map of custom labels that are added to namespace.
-	//The actual name of the label in the namespace will be crdname/labelname
+	//CustomLabels map of custom labels that are added to namespace
 	CustomLabels map[string]string `json:"customLabels,omitempty"`
 }
 type LabelStatus struct {
@@ -33,15 +32,12 @@ type LabelStatus struct {
 
 // CustomLabelStatus defines the observed state of CustomLabel
 type CustomLabelStatus struct {
-	// Applied: The applied field will only be true if the labels are added to the namespace
-	// Otherwise it will be false
-	Applied bool `json:"applied"`
 
-	//Message: Gives additional info regarding the customlabel status
+	//Message Gives additional info regarding the customlabel status
 	//or any error that occurred
 	Message string `json:"message,omitempty"`
 
-	//PerLabelStatus: Information regarding each label in the spec,
+	//PerLabelStatus Information regarding each label in the spec,
 	// whether it was applied and the previous value
 	PerLabelStatus map[string]LabelStatus `json:"perLabelStatus,omitempty"`
 }
@@ -60,7 +56,7 @@ type CustomLabel struct {
 
 //+kubebuilder:object:root=true
 
-// CustomLabelsList contains a list of CustomLabels
+// CustomLabelList contains a list of CustomLabels
 type CustomLabelList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
