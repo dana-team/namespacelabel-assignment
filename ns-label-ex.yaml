@@ -1,0 +1,10 @@
+apiVersion: dana.io.dana.io/v1alpha1
+kind: NamespaceLabel
+metadata:
+  name: namespacelabel-1-897ofeks
+  namespace: 897ofeks
+spec:
+  labels:
+    label_2: hamborgery
+    label_3: yak
+    label_4: what

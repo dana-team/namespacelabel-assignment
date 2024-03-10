@@ -1,0 +1,13 @@
+apiVersion: dana.io.dana.io/v1alpha1
+kind: NamespaceLabel
+metadata:
+  name: namespacelabel-4-897ofeks
+  namespace: 897ofeks
+spec:
+  labels:
+    label_2: hamborgery
+    label_3: good
+    label_4: what
+    label_5: kaki
+    label_6: kakikosh
+    new_one: matani
