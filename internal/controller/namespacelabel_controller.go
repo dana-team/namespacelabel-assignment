@@ -23,9 +23,12 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	namespacelabelv1alpha1 "namespacelabel.dana.io/api/v1alpha1"
 )
@@ -126,10 +129,12 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if changed {
+		l.Info("Syncing labels to namespace", "namespace", ns.Name, "labels", newManagedLabelsStr)
 		if err := r.Update(ctx, &ns); err != nil {
 			l.Error(err, "unable to update Namespace labels")
 			return ctrl.Result{}, err
 		}
+
 	}
 
 	return ctrl.Result{}, nil
@@ -164,6 +169,16 @@ func (r *NamespaceLabelReconciler) isProtected(key string) bool {
 func (r *NamespaceLabelReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&namespacelabelv1alpha1.NamespaceLabel{}).
-		Named("namespacelabel").
+		Watches(
+			&corev1.Namespace{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+				// When a namespace changes, trigger reconciliation for all
+				// NamespaceLabels in that namespace
+				return []reconcile.Request{{NamespacedName: types.NamespacedName{
+					Name:      "dummy", // The name doesn't strictly matter as we list all CRs in the namespace
+					Namespace: obj.GetName(),
+				}}}
+			}),
+		).
 		Complete(r)
 }
