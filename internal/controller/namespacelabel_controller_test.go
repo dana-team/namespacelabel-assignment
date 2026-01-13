@@ -88,7 +88,7 @@ var _ = Describe("NamespaceLabel Controller", func() {
 			By("Verifying that the namespace has the expected labels")
 			ns := &corev1.Namespace{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, ns)).To(Succeed())
-			// Note: In envtest, we don't have a real namespace controller, so we might need 
+			// Note: In envtest, we don't have a real namespace controller, so we might need
 			// to mock or manually check the namespace object if the controller updated it.
 		})
 
@@ -101,7 +101,7 @@ var _ = Describe("NamespaceLabel Controller", func() {
 				},
 				Spec: namespacelabelv1alpha1.NamespaceLabelSpec{
 					Labels: map[string]string{
-						"label-a":       "val-a",
+						"label-a":           "val-a",
 						"kubernetes.io/foo": "bar", // Protected
 					},
 				},
@@ -210,7 +210,7 @@ var _ = Describe("NamespaceLabel Controller", func() {
 					Name: nsName,
 					Labels: map[string]string{
 						"kubernetes.io/existing": "don-not-touch",
-						"k8s.io/managed":        "important",
+						"k8s.io/managed":         "important",
 					},
 					Annotations: map[string]string{
 						"namespacelabel.dana.io/managed-labels": "kubernetes.io/existing", // Simulate a bad state where a protected label is in managed list
