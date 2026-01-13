@@ -22,6 +22,8 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -34,17 +36,20 @@ import (
 )
 
 const (
-	// Annotation used to track which labels this operator is responsible for.
-	ManagedLabelsAnnotation = "namespacelabel.dana.io/managed-labels"
-)
+	// Condition types
+	ConditionTypeApplied = "Applied"
 
-// List of prefixes that we should NEVER touch.
-var protectedPrefixes = []string{"kubernetes.io/", "k8s.io/"}
+	// Reasons
+	ReasonSucceeded = "Succeeded"
+	ReasonFailed    = "Failed"
+)
 
 // NamespaceLabelReconciler reconciles a NamespaceLabel object
 type NamespaceLabelReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme                  *runtime.Scheme
+	ProtectedPrefixes       []string
+	ManagedLabelsAnnotation string
 }
 
 // +kubebuilder:rbac:groups=namespacelabel.dana.io,resources=namespacelabels,verbs=get;list;watch;create;update;patch;delete
@@ -76,11 +81,13 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	nsOriginal := ns.DeepCopy()
+
 	// Determine desired labels
 	desiredLabels := r.calculateDesiredLabels(nlList.Items)
 
 	// Get currently managed labels from annotation
-	managedLabelsStr := ns.Annotations[ManagedLabelsAnnotation]
+	managedLabelsStr := ns.Annotations[r.ManagedLabelsAnnotation]
 	managedLabelsKeys := make(map[string]struct{})
 	if managedLabelsStr != "" {
 		for _, k := range strings.Split(managedLabelsStr, ",") {
@@ -123,21 +130,58 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if ns.Annotations == nil {
 		ns.Annotations = make(map[string]string)
 	}
-	if ns.Annotations[ManagedLabelsAnnotation] != newManagedLabelsStr {
-		ns.Annotations[ManagedLabelsAnnotation] = newManagedLabelsStr
+	if ns.Annotations[r.ManagedLabelsAnnotation] != newManagedLabelsStr {
+		ns.Annotations[r.ManagedLabelsAnnotation] = newManagedLabelsStr
 		changed = true
 	}
 
 	if changed {
 		l.Info("Syncing labels to namespace", "namespace", ns.Name, "labels", newManagedLabelsStr)
-		if err := r.Update(ctx, &ns); err != nil {
-			l.Error(err, "unable to update Namespace labels")
+		patch := client.MergeFrom(nsOriginal)
+		if err := r.Patch(ctx, &ns, patch); err != nil {
+			l.Error(err, "unable to patch Namespace labels")
+			r.updateStatus(ctx, nlList.Items, metav1.ConditionFalse, ReasonFailed, "Failed to patch namespace")
 			return ctrl.Result{}, err
 		}
-
 	}
 
+	r.updateStatus(ctx, nlList.Items, metav1.ConditionTrue, ReasonSucceeded, "Labels synced successfully")
 	return ctrl.Result{}, nil
+}
+
+func (r *NamespaceLabelReconciler) updateStatus(ctx context.Context, items []namespacelabelv1alpha1.NamespaceLabel, status metav1.ConditionStatus, reason, message string) {
+	l := log.FromContext(ctx)
+	for _, item := range items {
+		// Calculate applied and failed labels for this specific CR
+		var appliedLabels []string
+		var failedLabels []namespacelabelv1alpha1.FailedLabel
+
+		for k := range item.Spec.Labels {
+			if r.isProtected(k) {
+				failedLabels = append(failedLabels, namespacelabelv1alpha1.FailedLabel{
+					Key:    k,
+					Reason: "Label is protected (reserved prefix)",
+				})
+			} else {
+				appliedLabels = append(appliedLabels, k)
+			}
+		}
+		sort.Strings(appliedLabels)
+
+		item.Status.AppliedLabels = appliedLabels
+		item.Status.FailedLabels = failedLabels
+
+		meta.SetStatusCondition(&item.Status.Conditions, metav1.Condition{
+			Type:    ConditionTypeApplied,
+			Status:  status,
+			Reason:  reason,
+			Message: message,
+		})
+
+		if err := r.Status().Update(ctx, &item); err != nil {
+			l.Error(err, "unable to update NamespaceLabel status", "name", item.Name)
+		}
+	}
 }
 
 func (r *NamespaceLabelReconciler) calculateDesiredLabels(items []namespacelabelv1alpha1.NamespaceLabel) map[string]string {
@@ -157,7 +201,7 @@ func (r *NamespaceLabelReconciler) calculateDesiredLabels(items []namespacelabel
 	return desired
 }
 func (r *NamespaceLabelReconciler) isProtected(key string) bool {
-	for _, p := range protectedPrefixes {
+	for _, p := range r.ProtectedPrefixes {
 		if strings.HasPrefix(key, p) {
 			return true
 		}
@@ -174,10 +218,20 @@ func (r *NamespaceLabelReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
 				// When a namespace changes, trigger reconciliation for all
 				// NamespaceLabels in that namespace
-				return []reconcile.Request{{NamespacedName: types.NamespacedName{
-					Name:      "dummy", // The name doesn't strictly matter as we list all CRs in the namespace
-					Namespace: obj.GetName(),
-				}}}
+				var nlList namespacelabelv1alpha1.NamespaceLabelList
+				if err := r.List(ctx, &nlList, client.InNamespace(obj.GetName())); err != nil {
+					return nil
+				}
+				var requests []reconcile.Request
+				for _, nl := range nlList.Items {
+					requests = append(requests, reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Name:      nl.Name,
+							Namespace: nl.Namespace,
+						},
+					})
+				}
+				return requests
 			}),
 		).
 		Complete(r)

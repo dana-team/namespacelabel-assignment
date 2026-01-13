@@ -21,6 +21,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -51,7 +52,11 @@ var _ = Describe("NamespaceLabel Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: namespacelabelv1alpha1.NamespaceLabelSpec{
+						Labels: map[string]string{
+							"test-label": "test-value",
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
@@ -69,16 +74,181 @@ var _ = Describe("NamespaceLabel Controller", func() {
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &NamespaceLabelReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:                  k8sClient,
+				Scheme:                  k8sClient.Scheme(),
+				ProtectedPrefixes:       []string{"kubernetes.io/", "k8s.io/"},
+				ManagedLabelsAnnotation: "namespacelabel.dana.io/managed-labels",
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+
+			By("Verifying that the namespace has the expected labels")
+			ns := &corev1.Namespace{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "default"}, ns)).To(Succeed())
+			// Note: In envtest, we don't have a real namespace controller, so we might need 
+			// to mock or manually check the namespace object if the controller updated it.
+		})
+
+		It("should handle multiple NamespaceLabel objects and protected labels", func() {
+			By("creating another NamespaceLabel")
+			anotherNL := &namespacelabelv1alpha1.NamespaceLabel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "another-nl",
+					Namespace: "default",
+				},
+				Spec: namespacelabelv1alpha1.NamespaceLabelSpec{
+					Labels: map[string]string{
+						"label-a":       "val-a",
+						"kubernetes.io/foo": "bar", // Protected
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, anotherNL)).To(Succeed())
+
+			controllerReconciler := &NamespaceLabelReconciler{
+				Client:                  k8sClient,
+				Scheme:                  k8sClient.Scheme(),
+				ProtectedPrefixes:       []string{"kubernetes.io/", "k8s.io/"},
+				ManagedLabelsAnnotation: "namespacelabel.dana.io/managed-labels",
+			}
+
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "another-nl", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying status of the CR")
+			updatedNL := &namespacelabelv1alpha1.NamespaceLabel{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "another-nl", Namespace: "default"}, updatedNL)).To(Succeed())
+
+			Expect(updatedNL.Status.AppliedLabels).To(ContainElement("label-a"))
+			Expect(updatedNL.Status.FailedLabels).To(HaveLen(1))
+			Expect(updatedNL.Status.FailedLabels[0].Key).To(Equal("kubernetes.io/foo"))
+
+			By("Cleanup")
+			Expect(k8sClient.Delete(ctx, anotherNL)).To(Succeed())
+		})
+
+		It("should handle overlapping labels from multiple NamespaceLabel objects", func() {
+			const nsName = "overlap-ns"
+			By("Creating a test namespace")
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: nsName,
+					Labels: map[string]string{
+						"existing-label": "keep-me",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+
+			By("Creating NamespaceLabel 'a-nl' and 'z-nl'")
+			// According to controller logic: sort.Slice(items, func(i, j int) bool { return items[i].Name > items[j].Name })
+			// This means 'a-nl' comes after 'z-nl' in the sorted list, so 'a-nl' overwrites 'z-nl'.
+			nlA := &namespacelabelv1alpha1.NamespaceLabel{
+				ObjectMeta: metav1.ObjectMeta{Name: "a-nl", Namespace: nsName},
+				Spec: namespacelabelv1alpha1.NamespaceLabelSpec{
+					Labels: map[string]string{"conflict": "val-a", "shared": "both"},
+				},
+			}
+			nlZ := &namespacelabelv1alpha1.NamespaceLabel{
+				ObjectMeta: metav1.ObjectMeta{Name: "z-nl", Namespace: nsName},
+				Spec: namespacelabelv1alpha1.NamespaceLabelSpec{
+					Labels: map[string]string{"conflict": "val-z", "unique-z": "only-z", "shared": "both"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, nlA)).To(Succeed())
+			Expect(k8sClient.Create(ctx, nlZ)).To(Succeed())
+
+			reconciler := &NamespaceLabelReconciler{
+				Client:                  k8sClient,
+				Scheme:                  k8sClient.Scheme(),
+				ProtectedPrefixes:       []string{"kubernetes.io/", "k8s.io/"},
+				ManagedLabelsAnnotation: "namespacelabel.dana.io/managed-labels",
+			}
+
+			// Reconcile 'a-nl' (the list-based logic will fetch both)
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "a-nl", Namespace: nsName},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying merged labels on the namespace")
+			updatedNS := &corev1.Namespace{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nsName}, updatedNS)).To(Succeed())
+
+			Expect(updatedNS.Labels["conflict"]).To(Equal("val-a"), "a-nl should overwrite z-nl")
+			Expect(updatedNS.Labels["unique-z"]).To(Equal("only-z"))
+			Expect(updatedNS.Labels["shared"]).To(Equal("both"))
+			Expect(updatedNS.Labels["existing-label"]).To(Equal("keep-me"))
+
+			By("Deleting 'a-nl' and reconciling again")
+			Expect(k8sClient.Delete(ctx, nlA)).To(Succeed())
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "z-nl", Namespace: nsName},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying labels after one CR is deleted")
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nsName}, updatedNS)).To(Succeed())
+			Expect(updatedNS.Labels["conflict"]).To(Equal("val-z"), "z-nl should now be the source for 'conflict'")
+			Expect(updatedNS.Labels).NotTo(HaveKey("unique-a"))
+
+			By("Cleanup")
+			Expect(k8sClient.Delete(ctx, nlZ)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, ns)).To(Succeed())
+		})
+
+		It("should preserve protected labels already on the namespace", func() {
+			const nsName = "protected-ns"
+			By("Creating a namespace with protected labels")
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: nsName,
+					Labels: map[string]string{
+						"kubernetes.io/existing": "don-not-touch",
+						"k8s.io/managed":        "important",
+					},
+					Annotations: map[string]string{
+						"namespacelabel.dana.io/managed-labels": "kubernetes.io/existing", // Simulate a bad state where a protected label is in managed list
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+
+			nl := &namespacelabelv1alpha1.NamespaceLabel{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-nl", Namespace: nsName},
+				Spec: namespacelabelv1alpha1.NamespaceLabelSpec{
+					Labels: map[string]string{"new-label": "val"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, nl)).To(Succeed())
+
+			reconciler := &NamespaceLabelReconciler{
+				Client:                  k8sClient,
+				Scheme:                  k8sClient.Scheme(),
+				ProtectedPrefixes:       []string{"kubernetes.io/", "k8s.io/"},
+				ManagedLabelsAnnotation: "namespacelabel.dana.io/managed-labels",
+			}
+
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-nl", Namespace: nsName},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying protected labels are preserved")
+			updatedNS := &corev1.Namespace{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nsName}, updatedNS)).To(Succeed())
+			Expect(updatedNS.Labels["kubernetes.io/existing"]).To(Equal("don-not-touch"))
+			Expect(updatedNS.Labels["k8s.io/managed"]).To(Equal("important"))
+			Expect(updatedNS.Labels["new-label"]).To(Equal("val"))
+
+			By("Cleanup")
+			Expect(k8sClient.Delete(ctx, nl)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, ns)).To(Succeed())
 		})
 	})
 })

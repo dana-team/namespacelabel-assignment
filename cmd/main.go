@@ -20,6 +20,8 @@ import (
 	"crypto/tls"
 	"flag"
 	"os"
+	"strings"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -34,6 +36,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+
+	"github.com/go-logr/zapr"
+	"go.elastic.co/ecszap"
+	uzap "go.uber.org/zap"
 
 	namespacelabelv1alpha1 "namespacelabel.dana.io/api/v1alpha1"
 	"namespacelabel.dana.io/internal/controller"
@@ -61,6 +68,8 @@ func main() {
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
+	var protectedPrefixes string
+	var managedLabelsAnnotation string
 	var tlsOpts []func(*tls.Config)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -70,6 +79,8 @@ func main() {
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.BoolVar(&secureMetrics, "metrics-secure", true,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
+	flag.StringVar(&protectedPrefixes, "protected-prefixes", "kubernetes.io/,k8s.io/", "Comma-separated list of protected label prefixes.")
+	flag.StringVar(&managedLabelsAnnotation, "managed-labels-annotation", "namespacelabel.dana.io/managed-labels", "Annotation to track managed labels.")
 	flag.StringVar(&webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
 	flag.StringVar(&webhookCertName, "webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
 	flag.StringVar(&webhookCertKey, "webhook-cert-key", "tls.key", "The name of the webhook key file.")
@@ -85,7 +96,22 @@ func main() {
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	// Allow overrides via environment variables
+	if env := os.Getenv("PROTECTED_PREFIXES"); env != "" {
+		protectedPrefixes = env
+	}
+	if env := os.Getenv("MANAGED_LABELS_ANNOTATION"); env != "" {
+		managedLabelsAnnotation = env
+	}
+
+	encoderConfig := ecszap.NewDefaultEncoderConfig()
+	level := uzap.InfoLevel
+	if opts.Development {
+		level = uzap.DebugLevel
+	}
+	core := ecszap.NewCore(encoderConfig, os.Stdout, level)
+	logger := uzap.New(core, uzap.AddCaller())
+	ctrl.SetLogger(zapr.NewLogger(logger))
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
@@ -154,6 +180,7 @@ func main() {
 		metricsServerOptions.KeyName = metricsCertKey
 	}
 
+	resyncPeriod := time.Minute
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
@@ -161,6 +188,9 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "9204f17c.dana.io",
+		Cache: cache.Options{
+			SyncPeriod: &resyncPeriod,
+		},
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
@@ -179,8 +209,10 @@ func main() {
 	}
 
 	if err := (&controller.NamespaceLabelReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:                  mgr.GetClient(),
+		Scheme:                  mgr.GetScheme(),
+		ProtectedPrefixes:       strings.Split(protectedPrefixes, ","),
+		ManagedLabelsAnnotation: managedLabelsAnnotation,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NamespaceLabel")
 		os.Exit(1)

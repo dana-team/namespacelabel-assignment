@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -266,17 +267,91 @@ var _ = Describe("Manager", Ordered, func() {
 			Eventually(verifyMetricsAvailable, 2*time.Minute).Should(Succeed())
 		})
 
-		// +kubebuilder:scaffold:e2e-webhooks-checks
+		It("should successfully reconcile a NamespaceLabel custom resource", func() {
+			testNamespace := "test-ns-e2e"
+			By("creating a test namespace")
+			cmd := exec.Command("kubectl", "create", "ns", testNamespace)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
 
-		// TODO: Customize the e2e test suite with scenarios specific to your project.
-		// Consider applying sample/CR(s) and check their status and/or verifying
-		// the reconciliation by using the metrics, i.e.:
-		// metricsOutput, err := getMetricsOutput()
-		// Expect(err).NotTo(HaveOccurred(), "Failed to retrieve logs from curl pod")
-		// Expect(metricsOutput).To(ContainSubstring(
-		//    fmt.Sprintf(`controller_runtime_reconcile_total{controller="%s",result="success"} 1`,
-		//    strings.ToLower(<Kind>),
-		// ))
+			By("creating a NamespaceLabel CR")
+			crYAML := fmt.Sprintf(`
+apiVersion: namespacelabel.dana.io/v1alpha1
+kind: NamespaceLabel
+metadata:
+  name: test-nl
+  namespace: %s
+spec:
+  labels:
+    e2e-label: test-value
+`, testNamespace)
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(crYAML)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying the label is added to the namespace")
+			verifyLabelAdded := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "ns", testNamespace, "-o", "jsonpath={.metadata.labels.e2e-label}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("test-value"))
+			}
+			Eventually(verifyLabelAdded, 1*time.Minute, time.Second).Should(Succeed())
+
+			By("updating the NamespaceLabel CR")
+			crYAMLUpdate := fmt.Sprintf(`
+apiVersion: namespacelabel.dana.io/v1alpha1
+kind: NamespaceLabel
+metadata:
+  name: test-nl
+  namespace: %s
+spec:
+  labels:
+    e2e-label: updated-value
+    new-label: present
+`, testNamespace)
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(crYAMLUpdate)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying the labels are updated in the namespace")
+			verifyLabelsUpdated := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "ns", testNamespace, "-o", "jsonpath={.metadata.labels}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				var labels map[string]string
+				err = json.Unmarshal([]byte(output), &labels)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(labels["e2e-label"]).To(Equal("updated-value"))
+				g.Expect(labels["new-label"]).To(Equal("present"))
+			}
+			Eventually(verifyLabelsUpdated, 1*time.Minute, time.Second).Should(Succeed())
+
+			By("deleting the NamespaceLabel CR")
+			cmd = exec.Command("kubectl", "delete", "namespacelabel", "test-nl", "-n", testNamespace)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying the labels are removed from the namespace")
+			verifyLabelsRemoved := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "ns", testNamespace, "-o", "jsonpath={.metadata.labels}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				var labels map[string]string
+				err = json.Unmarshal([]byte(output), &labels)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(labels).NotTo(HaveKey("e2e-label"))
+				g.Expect(labels).NotTo(HaveKey("new-label"))
+			}
+			Eventually(verifyLabelsRemoved, 1*time.Minute, time.Second).Should(Succeed())
+
+			By("cleaning up the test namespace")
+			cmd = exec.Command("kubectl", "delete", "ns", testNamespace)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+		})
 	})
 })
 

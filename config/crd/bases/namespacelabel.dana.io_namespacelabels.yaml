@@ -42,14 +42,22 @@ spec:
               labels:
                 additionalProperties:
                   type: string
-                description: |-
-                  Labels is a map of labels to be applied to the parent namespace.
-                  The +optional marker tells Kubebuilder this field isn't required in the YAML.
+                description: Labels is a map of labels to be applied to the parent
+                  namespace.
+                minProperties: 1
                 type: object
+            required:
+            - labels
             type: object
           status:
             description: status defines the observed state of NamespaceLabel
             properties:
+              appliedLabels:
+                description: AppliedLabels is a list of labels that were successfully
+                  applied to the namespace.
+                items:
+                  type: string
+                type: array
               conditions:
                 description: |-
                   conditions represent the current state of the NamespaceLabel resource.
@@ -119,6 +127,24 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              failedLabels:
+                description: FailedLabels is a list of labels that could not be applied,
+                  with reasons.
+                items:
+                  description: FailedLabel represents a label that failed to be applied.
+                  properties:
+                    key:
+                      description: Key is the label key that failed.
+                      type: string
+                    reason:
+                      description: Reason is why the label failed to be applied (e.g.,
+                        "Protected").
+                      type: string
+                  required:
+                  - key
+                  - reason
+                  type: object
+                type: array
             type: object
         required:
         - spec

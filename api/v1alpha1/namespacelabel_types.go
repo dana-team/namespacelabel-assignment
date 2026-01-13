@@ -31,9 +31,9 @@ type NamespaceLabelSpec struct {
 	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
 	// Labels is a map of labels to be applied to the parent namespace.
-	// The +optional marker tells Kubebuilder this field isn't required in the YAML.
-	// +optional
-	Labels map[string]string `json:"labels,omitempty"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinProperties=1
+	Labels map[string]string `json:"labels"`
 }
 
 // NamespaceLabelStatus defines the observed state of NamespaceLabel.
@@ -57,6 +57,22 @@ type NamespaceLabelStatus struct {
 	// +listMapKey=type
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// AppliedLabels is a list of labels that were successfully applied to the namespace.
+	// +optional
+	AppliedLabels []string `json:"appliedLabels,omitempty"`
+
+	// FailedLabels is a list of labels that could not be applied, with reasons.
+	// +optional
+	FailedLabels []FailedLabel `json:"failedLabels,omitempty"`
+}
+
+// FailedLabel represents a label that failed to be applied.
+type FailedLabel struct {
+	// Key is the label key that failed.
+	Key string `json:"key"`
+	// Reason is why the label failed to be applied (e.g., "Protected").
+	Reason string `json:"reason"`
 }
 
 // +kubebuilder:object:root=true
