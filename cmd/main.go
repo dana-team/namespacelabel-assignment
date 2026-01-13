@@ -31,12 +31,12 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 
 	"github.com/go-logr/zapr"
 	"go.elastic.co/ecszap"
@@ -79,8 +79,10 @@ func main() {
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.BoolVar(&secureMetrics, "metrics-secure", true,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
-	flag.StringVar(&protectedPrefixes, "protected-prefixes", "kubernetes.io/,k8s.io/", "Comma-separated list of protected label prefixes.")
-	flag.StringVar(&managedLabelsAnnotation, "managed-labels-annotation", "namespacelabel.dana.io/managed-labels", "Annotation to track managed labels.")
+	flag.StringVar(&protectedPrefixes, "protected-prefixes", "kubernetes.io/,k8s.io/",
+		"Comma-separated list of protected label prefixes.")
+	flag.StringVar(&managedLabelsAnnotation, "managed-labels-annotation", "namespacelabel.dana.io/managed-labels",
+		"Annotation to track managed labels.")
 	flag.StringVar(&webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
 	flag.StringVar(&webhookCertName, "webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
 	flag.StringVar(&webhookCertKey, "webhook-cert-key", "tls.key", "The name of the webhook key file.")
