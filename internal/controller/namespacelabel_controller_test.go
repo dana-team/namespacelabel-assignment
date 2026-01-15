@@ -32,6 +32,16 @@ import (
 )
 
 var _ = Describe("NamespaceLabel Controller", func() {
+	const (
+		testLabelKey   = "test-label"
+		testLabelValue = "test-value"
+		labelAKey      = "label-a"
+		labelAValue    = "val-a"
+		protectedKey   = "kubernetes.io/foo"
+		protectedValue = "bar"
+		managedLabels  = "namespacelabel.dana.io/managed-labels"
+	)
+
 	Context("When reconciling a resource", func() {
 		const resourceName = "test-resource"
 
@@ -54,7 +64,7 @@ var _ = Describe("NamespaceLabel Controller", func() {
 					},
 					Spec: namespacelabelv1alpha1.NamespaceLabelSpec{
 						Labels: map[string]string{
-							"test-label": "test-value",
+							testLabelKey: testLabelValue,
 						},
 					},
 				}
@@ -77,7 +87,7 @@ var _ = Describe("NamespaceLabel Controller", func() {
 				Client:                  k8sClient,
 				Scheme:                  k8sClient.Scheme(),
 				ProtectedPrefixes:       []string{"kubernetes.io/", "k8s.io/"},
-				ManagedLabelsAnnotation: "namespacelabel.dana.io/managed-labels",
+				ManagedLabelsAnnotation: managedLabels,
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -101,8 +111,8 @@ var _ = Describe("NamespaceLabel Controller", func() {
 				},
 				Spec: namespacelabelv1alpha1.NamespaceLabelSpec{
 					Labels: map[string]string{
-						"label-a":           "val-a",
-						"kubernetes.io/foo": "bar", // Protected
+						labelAKey:    labelAValue,
+						protectedKey: protectedValue, // Protected
 					},
 				},
 			}
@@ -112,7 +122,7 @@ var _ = Describe("NamespaceLabel Controller", func() {
 				Client:                  k8sClient,
 				Scheme:                  k8sClient.Scheme(),
 				ProtectedPrefixes:       []string{"kubernetes.io/", "k8s.io/"},
-				ManagedLabelsAnnotation: "namespacelabel.dana.io/managed-labels",
+				ManagedLabelsAnnotation: managedLabels,
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -124,9 +134,9 @@ var _ = Describe("NamespaceLabel Controller", func() {
 			updatedNL := &namespacelabelv1alpha1.NamespaceLabel{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "another-nl", Namespace: "default"}, updatedNL)).To(Succeed())
 
-			Expect(updatedNL.Status.AppliedLabels).To(ContainElement("label-a"))
+			Expect(updatedNL.Status.AppliedLabels).To(ContainElement(labelAKey))
 			Expect(updatedNL.Status.FailedLabels).To(HaveLen(1))
-			Expect(updatedNL.Status.FailedLabels[0].Key).To(Equal("kubernetes.io/foo"))
+			Expect(updatedNL.Status.FailedLabels[0].Key).To(Equal(protectedKey))
 
 			By("Cleanup")
 			Expect(k8sClient.Delete(ctx, anotherNL)).To(Succeed())
@@ -167,7 +177,7 @@ var _ = Describe("NamespaceLabel Controller", func() {
 				Client:                  k8sClient,
 				Scheme:                  k8sClient.Scheme(),
 				ProtectedPrefixes:       []string{"kubernetes.io/", "k8s.io/"},
-				ManagedLabelsAnnotation: "namespacelabel.dana.io/managed-labels",
+				ManagedLabelsAnnotation: managedLabels,
 			}
 
 			// Reconcile 'a-nl' (the list-based logic will fetch both)
@@ -213,7 +223,7 @@ var _ = Describe("NamespaceLabel Controller", func() {
 						"k8s.io/managed":         "important",
 					},
 					Annotations: map[string]string{
-						"namespacelabel.dana.io/managed-labels": "kubernetes.io/existing", // Simulate a bad state where a protected label is in managed list
+						managedLabels: "kubernetes.io/existing", // Simulate a bad state where a protected label is in managed list
 					},
 				},
 			}
@@ -231,7 +241,7 @@ var _ = Describe("NamespaceLabel Controller", func() {
 				Client:                  k8sClient,
 				Scheme:                  k8sClient.Scheme(),
 				ProtectedPrefixes:       []string{"kubernetes.io/", "k8s.io/"},
-				ManagedLabelsAnnotation: "namespacelabel.dana.io/managed-labels",
+				ManagedLabelsAnnotation: managedLabels,
 			}
 
 			_, err := reconciler.Reconcile(ctx, reconcile.Request{
