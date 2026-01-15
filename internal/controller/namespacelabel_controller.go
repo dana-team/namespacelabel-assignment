@@ -57,25 +57,15 @@ type NamespaceLabelReconciler struct {
 // +kubebuilder:rbac:groups=namespacelabel.dana.io,resources=namespacelabels/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;update;patch
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the NamespaceLabel object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.22.4/pkg/reconcile
+// Reconcile moved the current state of the cluster closer to the desired state.
 func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	l := log.FromContext(ctx)
 
-	// Fetch all NamespaceLabel objects in the namespace
 	var nlList namespacelabelv1alpha1.NamespaceLabelList
 	if err := r.List(ctx, &nlList, client.InNamespace(req.Namespace)); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Fetch the Namespace object
 	var ns corev1.Namespace
 	if err := r.Get(ctx, client.ObjectKey{Name: req.Namespace}, &ns); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -83,10 +73,8 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	nsOriginal := ns.DeepCopy()
 
-	// Determine desired labels
 	desiredLabels := r.calculateDesiredLabels(nlList.Items)
 
-	// Get currently managed labels from annotation
 	managedLabelsStr := ns.Annotations[r.ManagedLabelsAnnotation]
 	managedLabelsKeys := make(map[string]struct{})
 	if managedLabelsStr != "" {
@@ -95,16 +83,13 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	// Update Namespace labels
 	changed := false
 	if ns.Labels == nil {
 		ns.Labels = make(map[string]string)
 	}
 
-	// 1. Remove labels that are no longer managed
 	for k := range managedLabelsKeys {
 		if _, ok := desiredLabels[k]; !ok {
-			// Only remove if it's not protected
 			if !r.isProtected(k) {
 				delete(ns.Labels, k)
 				changed = true
@@ -112,7 +97,6 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	// 2. Add/Update desired labels
 	newManagedKeys := []string{}
 	for k, v := range desiredLabels {
 		if !r.isProtected(k) {
@@ -124,7 +108,6 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	// Update annotation
 	sort.Strings(newManagedKeys)
 	newManagedLabelsStr := strings.Join(newManagedKeys, ",")
 	if ns.Annotations == nil {
@@ -209,15 +192,12 @@ func (r *NamespaceLabelReconciler) isProtected(key string) bool {
 	return false
 }
 
-// SetupWithManager sets up the controller with the Manager.
 func (r *NamespaceLabelReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&namespacelabelv1alpha1.NamespaceLabel{}).
 		Watches(
 			&corev1.Namespace{},
 			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
-				// When a namespace changes, trigger reconciliation for all
-				// NamespaceLabels in that namespace
 				var nlList namespacelabelv1alpha1.NamespaceLabelList
 				if err := r.List(ctx, &nlList, client.InNamespace(obj.GetName())); err != nil {
 					return nil

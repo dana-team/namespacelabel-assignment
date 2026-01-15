@@ -3,6 +3,6 @@ resources:
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 images:
-- name: controller:latest
+- name: controller
   newName: localhost/namespacelabel-operator
-  newTag: latest
+  newTag: controller:latest
