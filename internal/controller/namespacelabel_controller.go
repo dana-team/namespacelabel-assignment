@@ -57,7 +57,7 @@ type NamespaceLabelReconciler struct {
 // +kubebuilder:rbac:groups=namespacelabel.dana.io,resources=namespacelabels/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch;update;patch
 
-// Reconcile moved the current state of the cluster closer to the desired state.
+// Reconcile is the main reconciliation loop which aims to move the current state of the cluster closer to the desired state.
 func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	l := log.FromContext(ctx)
 
@@ -73,7 +73,7 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	nsOriginal := ns.DeepCopy()
 
-	desiredLabels := r.calculateDesiredLabels(nlList.Items)
+	desiredLabels := calculateDesiredLabels(nlList.Items)
 
 	managedLabelsStr := ns.Annotations[r.ManagedLabelsAnnotation]
 	managedLabelsKeys := make(map[string]struct{})
@@ -132,6 +132,7 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	return ctrl.Result{}, nil
 }
 
+// updateStatus updates the status of each NamespaceLabel object in the provided list.
 func (r *NamespaceLabelReconciler) updateStatus(ctx context.Context, items []namespacelabelv1alpha1.NamespaceLabel, status metav1.ConditionStatus, reason, message string) {
 	l := log.FromContext(ctx)
 	for _, item := range items {
@@ -167,7 +168,9 @@ func (r *NamespaceLabelReconciler) updateStatus(ctx context.Context, items []nam
 	}
 }
 
-func (r *NamespaceLabelReconciler) calculateDesiredLabels(items []namespacelabelv1alpha1.NamespaceLabel) map[string]string {
+// calculateDesiredLabels merges labels from all NamespaceLabel objects in a namespace.
+// It uses a deterministic sort order to handle conflicts.
+func calculateDesiredLabels(items []namespacelabelv1alpha1.NamespaceLabel) map[string]string {
 	// Sort items by name in descending order (e.g., "z", "b", "a").
 	// Since "a" comes last in a descending sort, its labels will overwrite
 	// any labels set by "b" or "z" when we iterate through the list.
@@ -183,6 +186,8 @@ func (r *NamespaceLabelReconciler) calculateDesiredLabels(items []namespacelabel
 	}
 	return desired
 }
+
+// isProtected checks if a label key starts with any of the protected prefixes.
 func (r *NamespaceLabelReconciler) isProtected(key string) bool {
 	for _, p := range r.ProtectedPrefixes {
 		if strings.HasPrefix(key, p) {
@@ -192,6 +197,7 @@ func (r *NamespaceLabelReconciler) isProtected(key string) bool {
 	return false
 }
 
+// SetupWithManager sets up the controller with the Manager.
 func (r *NamespaceLabelReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&namespacelabelv1alpha1.NamespaceLabel{}).
